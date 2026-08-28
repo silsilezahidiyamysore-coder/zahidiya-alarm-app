@@ -17,7 +17,7 @@ jobs:
         with:
           channel: 'stable'
 
-      - name: Generate Android platform folder (if missing)
+      - name: Generate Android platform folder if missing
         run: |
           if [ ! -d "android" ]; then
             flutter create --platforms=android --org com.zahidiya --project-name zahidiya_alarm temp_scaffold
@@ -25,88 +25,14 @@ jobs:
             rm -rf temp_scaffold
           fi
 
-      - name: Patch build.gradle for minSdkVersion 23 + multiDex
-        run: |
-          python3 - <<'EOF'
-          import re, glob
+      - name: Patch build.gradle
+        run: python3 scripts/patch_gradle.py
 
-          for path in glob.glob("android/app/build.gradle") + glob.glob("android/app/build.gradle.kts"):
-              with open(path) as f:
-                  content = f.read()
+      - name: Patch AndroidManifest.xml
+        run: python3 scripts/patch_manifest.py
 
-              if path.endswith(".kts"):
-                  content = re.sub(r'minSdk\s*=\s*flutter\.minSdkVersion', 'minSdk = 23', content)
-                  content = re.sub(r'minSdkVersion\s*=\s*flutter\.minSdkVersion', 'minSdkVersion = 23', content)
-                  if 'multiDexEnabled' not in content:
-                      content = content.replace(
-                          'defaultConfig {',
-                          'defaultConfig {\n        multiDexEnabled = true',
-                          1
-                      )
-              else:
-                  content = re.sub(r'minSdkVersion\s+flutter\.minSdkVersion', 'minSdkVersion 23', content)
-                  if 'multiDexEnabled' not in content:
-                      content = content.replace(
-                          'defaultConfig {',
-                          'defaultConfig {\n        multiDexEnabled true',
-                          1
-                      )
-
-              with open(path, "w") as f:
-                  f.write(content)
-              print(f"Patched {path}")
-          EOF
-
-      - name: Patch AndroidManifest.xml with required permissions and service
-        run: |
-          python3 - <<'EOF'
-          path = "android/app/src/main/AndroidManifest.xml"
-          with open(path) as f:
-              content = f.read()
-
-          permissions = """
-      <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
-      <uses-permission android:name="android.permission.WAKE_LOCK"/>
-      <uses-permission android:name="android.permission.VIBRATE"/>
-      <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT"/>
-      <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-      <uses-permission android:name="android.permission.ACCESS_NOTIFICATION_POLICY" />
-      <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-      <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"/>
-      <uses-permission android:name="android.permission.USE_EXACT_ALARM"/>
-      <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM"/>
-      """
-
-          if "RECEIVE_BOOT_COMPLETED" not in content:
-              idx = content.index(">", content.index("<manifest")) + 1
-              content = content[:idx] + permissions + content[idx:]
-
-          service_tag = '    <service android:name="com.gdelataillade.alarm.services.NotificationOnKillService" />\n'
-          if "NotificationOnKillService" not in content:
-              content = content.replace("</application>", service_tag + "</application>")
-
-          with open(path, "w") as f:
-              f.write(content)
-          print("AndroidManifest.xml patched")
-          EOF
-
-      - name: Ensure Kotlin version >= 1.9.0 in settings.gradle
-        run: |
-          python3 - <<'EOF'
-          import re, glob
-
-          for path in glob.glob("android/settings.gradle") + glob.glob("android/settings.gradle.kts"):
-              with open(path) as f:
-                  content = f.read()
-              # Bump low kotlin android plugin versions to 1.9.22
-              content = re.sub(
-                  r'(id\s*[\("]org\.jetbrains\.kotlin\.android[\)"]\s*version\s*["\'])([0-9.]+)(["\'])',
-                  lambda m: m.group(1) + '1.9.22' + m.group(3) if tuple(map(int, m.group(2).split('.'))) < (1,9,0) else m.group(0),
-                  content
-              )
-              with open(path, "w") as f:
-                  f.write(content)
-          EOF
+      - name: Patch settings.gradle kotlin version
+        run: python3 scripts/patch_settings.py
 
       - name: Get Flutter packages
         run: flutter pub get
