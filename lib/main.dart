@@ -35,7 +35,7 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   String _status = 'Ready. Neeche button dabao.';
-  StreamSubscription<AlarmSet>? _ringSub;
+  StreamSubscription<dynamic>? _ringSub;
 
   @override
   void initState() {
