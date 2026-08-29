@@ -4,7 +4,7 @@ with open(path) as f:
     content = f.read()
 
 permission_lines = [
-    "android.permission.RECEIVE_BOOT_COMPLETED",
+    "android.permission.INTERNET",    "android.permission.RECEIVE_BOOT_COMPLETED",
     "android.permission.WAKE_LOCK",
     "android.permission.VIBRATE",
     "android.permission.USE_FULL_SCREEN_INTENT",
