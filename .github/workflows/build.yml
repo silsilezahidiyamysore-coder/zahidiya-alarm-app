@@ -20,7 +20,7 @@ jobs:
       - name: Generate Android platform folder if missing
         run: |
           if [ ! -d "android" ]; then
-            flutter create --platforms=android --org com.zahidiya --project-name zahidiya_alarm temp_scaffold
+           flutter create --platforms=android --org com.zahidiya --project-name alarm temp_scaffold
             cp -r temp_scaffold/android ./android
             rm -rf temp_scaffold
           fi
