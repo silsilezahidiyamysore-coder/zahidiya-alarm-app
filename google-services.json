@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "830319568248",
+    "project_id": "zahidiya-alarm",
+    "storage_bucket": "zahidiya-alarm.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:830319568248:android:ade1ccc8aa57653e15948d",
+        "android_client_info": {
+          "package_name": "com.zahidiya.alarm"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCA_yvBFhc__cF3cLJOrVTiKNOwohRe9aQ"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
