@@ -34,6 +34,9 @@ jobs:
       - name: Patch settings.gradle kotlin version
         run: python3 scripts/patch_settings.py
 
+      - name: Add Firebase config
+        run: python3 scripts/patch_firebase.py
+
       - name: Get Flutter packages
         run: flutter pub get
 
