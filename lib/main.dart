@@ -6,6 +6,8 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:workmanager/workmanager.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 
 const String scheduleUrlBase =
     'https://zahidiya-mysore.pages.dev/api/get-alarm-schedule';
@@ -70,6 +72,39 @@ Future<List<Map<String, dynamic>>> fetchAndScheduleForMobile(String mobile) asyn
   return shownItems;
 }
 
+// FCM se push aane par turant loud alarm bajata hai (Live/Class shuru hone ka signal).
+Future<void> triggerImmediateAlarm(String title) async {
+  await Alarm.init();
+  final int alarmId = idFromString('live_${DateTime.now().millisecondsSinceEpoch}');
+  final alarmSettings = AlarmSettings(
+    id: alarmId,
+    dateTime: DateTime.now().add(const Duration(seconds: 2)),
+    loopAudio: true,
+    vibrate: true,
+    androidFullScreenIntent: true,
+    volumeSettings: VolumeSettings.fixed(volume: 1.0),
+    notificationSettings: NotificationSettings(
+      title: 'Zahidiya Alarm',
+      body: title,
+      stopButton: 'Band Karo',
+    ),
+  );
+  await Alarm.set(alarmSettings: alarmSettings);
+}
+
+String _titleFromMessage(RemoteMessage message) {
+  return message.notification?.title ??
+      message.data['title'] ??
+      'Live Shuru Ho Gaya';
+}
+
+// App band ho ya background mein ho, tab bhi FCM push yahan aata hai.
+@pragma('vm:entry-point')
+Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
+  await Firebase.initializeApp();
+  await triggerImmediateAlarm(_titleFromMessage(message));
+}
+
 // Yeh function background isolate mein chalta hai, jab Workmanager
 // roz khud-ba-khud is app ko "jagakar" naye alarms set karwata hai.
 @pragma('vm:entry-point')
@@ -90,6 +125,9 @@ void callbackDispatcher() {
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await Firebase.initializeApp();
+  FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
+
   await Alarm.init();
 
   await Workmanager().initialize(callbackDispatcher);
@@ -132,12 +170,31 @@ class _HomeScreenState extends State<HomeScreen> {
   String _status = 'Apna mobile number daal kar "Alarms Set Karo" dabao.\n(Isके baad roz apne aap set hote rahenge.)';
   List<Map<String, dynamic>> _scheduledItems = [];
   bool _loading = false;
+  String? _fcmToken;
 
   @override
   void initState() {
     super.initState();
     _requestPermissions();
     _loadSavedMobile();
+    _setupFCM();
+  }
+
+  Future<void> _setupFCM() async {
+    final messaging = FirebaseMessaging.instance;
+    await messaging.requestPermission(alert: true, badge: true, sound: true);
+
+    final token = await messaging.getToken();
+    _fcmToken = token;
+    if (token != null) {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('fcm_token', token);
+    }
+
+    // App khuli/foreground mein ho tab bhi push aane par turant alarm bajao
+    FirebaseMessaging.onMessage.listen((RemoteMessage message) {
+      triggerImmediateAlarm(_titleFromMessage(message));
+    });
   }
 
   Future<void> _loadSavedMobile() async {
