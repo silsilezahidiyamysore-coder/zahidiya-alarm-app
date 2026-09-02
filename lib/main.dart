@@ -11,6 +11,8 @@ import 'package:firebase_messaging/firebase_messaging.dart' as fcm;
 
 const String scheduleUrlBase =
     'https://zahidiya-mysore.pages.dev/api/get-alarm-schedule';
+const String saveFcmTokenUrl =
+    'https://zahidiya-mysore.pages.dev/api/save-fcm-token';
 const String dailySyncTaskName = 'zahidiyaDailyAlarmSync';
 
 int idFromString(String s) {
@@ -96,6 +98,19 @@ String _titleFromMessage(fcm.RemoteMessage message) {
   return message.notification?.title ??
       message.data['title'] ??
       'Live Shuru Ho Gaya';
+}
+
+// FCM token ko backend ko bhejta hai taaki us mobile number se link ho jaaye.
+Future<void> sendTokenToBackend(String mobile, String token) async {
+  try {
+    await http.post(
+      Uri.parse(saveFcmTokenUrl),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({'mobile': mobile, 'token': token}),
+    ).timeout(const Duration(seconds: 15));
+  } catch (e) {
+    // Fail ho to bhi crash na ho, agli baar app khulne par phir try hoga
+  }
 }
 
 // App band ho ya background mein ho, tab bhi FCM push yahan aata hai.
@@ -189,6 +204,11 @@ class _HomeScreenState extends State<HomeScreen> {
     if (token != null) {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('fcm_token', token);
+
+      final mobile = prefs.getString('mobile');
+      if (mobile != null && mobile.isNotEmpty) {
+        await sendTokenToBackend(mobile, token);
+      }
     }
 
     // App khuli/foreground mein ho tab bhi push aane par turant alarm bajao
@@ -227,6 +247,11 @@ class _HomeScreenState extends State<HomeScreen> {
 
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('mobile', mobile);
+
+    // Ab jo bhi FCM token pehle se mil chuka hai, use bhi is mobile se link kar do
+    if (_fcmToken != null) {
+      await sendTokenToBackend(mobile, _fcmToken!);
+    }
 
     try {
       final items = await fetchAndScheduleForMobile(mobile);
