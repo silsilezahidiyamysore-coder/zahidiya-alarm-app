@@ -182,7 +182,7 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   final _mobileController = TextEditingController();
-  String _status = 'Apna mobile number daal kar "Alarms Set Karo" dabao.\n(Isके baad roz apne aap set hote rahenge.)';
+  String _status = 'Apna mobile number daal kar "Alarms Set Karo" dabao.\n(Iske baad roz apne aap set hote rahenge.)';
   List<Map<String, dynamic>> _scheduledItems = [];
   bool _loading = false;
   String? _fcmToken;
