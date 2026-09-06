@@ -238,6 +238,21 @@ class _HomeScreenState extends State<HomeScreen> {
         _status = 'Pehle apna mobile number daalo.';
       });
       return;
+    }    final verifyUri = Uri.parse('https://zahidiya-mysore.pages.dev/api/verify-mobile?mobile=$mobile');
+    try {
+      final verifyRes = await http.get(verifyUri).timeout(const Duration(seconds: 15));
+      final verifyData = jsonDecode(verifyRes.body);
+      if (verifyData['registered'] != true) {
+        setState(() {
+          _status = 'Yeh mobile number registered nahi hai. Pehle website par register/login karo.';
+        });
+        return;
+      }
+    } catch (e) {
+      setState(() {
+        _status = 'Verify karne mein dikkat aayi, internet check karo.';
+      });
+      return;
     }
 
     setState(() {
