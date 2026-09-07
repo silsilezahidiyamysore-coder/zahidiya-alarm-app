@@ -39,6 +39,7 @@ Future<String?> _getLocalTonePath(String? toneUrl) async {
       return file.path;
     }
   } catch (e) {
+    // Download fail ho to purani cached file (agar ho) use kar lo
     try {
       final dir = await getApplicationDocumentsDirectory();
       final file = File('${dir.path}/custom_alarm_tone.mp3');
@@ -56,6 +57,24 @@ int idFromString(String s) {
   return hash % 1000000;
 }
 
+// Admin ne jitne second ka Start Alarm duration set kiya hai, us time ke baad
+// yeh khud alarm ko band kar deta hai (background WorkManager task ke through).
+Future<void> _scheduleStopAlarm(int alarmId, DateTime ringAt, int durationSeconds) async {
+  final stopAt = ringAt.add(Duration(seconds: durationSeconds));
+  final delay = stopAt.difference(DateTime.now());
+  if (delay.isNegative) return;
+  await Workmanager().registerOneOffTask(
+    'stopAlarm_$alarmId',
+    'stopAlarmTask',
+    initialDelay: delay,
+    inputData: {'alarmId': alarmId},
+    existingWorkPolicy: ExistingWorkPolicy.replace,
+  );
+}
+
+// Backend se schedule laakar real alarms set karta hai.
+// Yeh function App ke andar (button dabane par) aur background
+// (Workmanager ke through, roz apne aap) — dono jagah use hota hai.
 Future<List<Map<String, dynamic>>> fetchAndScheduleForMobile(String mobile) async {
   await Alarm.init();
   final uri = Uri.parse('$scheduleUrlBase?mobile=$mobile');
@@ -72,6 +91,7 @@ Future<List<Map<String, dynamic>>> fetchAndScheduleForMobile(String mobile) asyn
 
   final List<dynamic> schedule = data['schedule'] ?? [];
   final String? toneUrl = data['tone_url'];
+  final int durationSeconds = data['start_alarm_duration_seconds'] ?? 60;
   final String? localTonePath = await _getLocalTonePath(toneUrl);
   final now = DateTime.now();
   final List<Map<String, dynamic>> shownItems = [];
@@ -100,6 +120,7 @@ Future<List<Map<String, dynamic>>> fetchAndScheduleForMobile(String mobile) asyn
       ),
     );
     await Alarm.set(alarmSettings: alarmSettings);
+    await _scheduleStopAlarm(alarmId, dt, durationSeconds);
     shownItems.add({'title': title, 'time': dt});
   }
 
@@ -107,6 +128,8 @@ Future<List<Map<String, dynamic>>> fetchAndScheduleForMobile(String mobile) asyn
   return shownItems;
 }
 
+// Sirf pehle se cache mein saved tone file uthata hai — download nahi karta
+// (push aane ke waqt turant alarm bajna zaroori hai, download ka wait nahi karna).
 Future<String?> _getCachedTonePathOnly() async {
   try {
     final dir = await getApplicationDocumentsDirectory();
@@ -116,6 +139,7 @@ Future<String?> _getCachedTonePathOnly() async {
   return null;
 }
 
+// FCM se push aane par turant loud alarm bajata hai (Live/Class shuru hone ka signal).
 Future<void> triggerImmediateAlarm(String title) async {
   await Alarm.init();
   final int alarmId = idFromString('live_${DateTime.now().millisecondsSinceEpoch}');
@@ -143,6 +167,7 @@ String _titleFromMessage(fcm.RemoteMessage message) {
       'Live Shuru Ho Gaya';
 }
 
+// FCM token ko backend ko bhejta hai taaki us mobile number se link ho jaaye.
 Future<void> sendTokenToBackend(String mobile, String token) async {
   try {
     await http.post(
@@ -150,15 +175,21 @@ Future<void> sendTokenToBackend(String mobile, String token) async {
       headers: {'Content-Type': 'application/json'},
       body: jsonEncode({'mobile': mobile, 'token': token}),
     ).timeout(const Duration(seconds: 15));
-  } catch (e) {}
+  } catch (e) {
+    // Fail ho to bhi crash na ho, agli baar app khulne par phir try hoga
+  }
 }
 
+// App band ho ya background mein ho, tab bhi FCM push yahan aata hai.
 @pragma('vm:entry-point')
 Future<void> firebaseMessagingBackgroundHandler(fcm.RemoteMessage message) async {
   await Firebase.initializeApp();
   await triggerImmediateAlarm(_titleFromMessage(message));
 }
 
+// Yeh function background isolate mein chalta hai, jab Workmanager
+// roz khud-ba-khud is app ko "jagakar" naye alarms set karwata hai.
+// Raat ko fix time (1:00 AM) par sync chalane ke liye — Fajr se kaafi pehle.
 Duration _delayUntilNext1AM() {
   final now = DateTime.now();
   var target = DateTime(now.year, now.month, now.day, 1, 0);
@@ -181,13 +212,26 @@ Future<void> _scheduleNightlySync() async {
 @pragma('vm:entry-point')
 void callbackDispatcher() {
   Workmanager().executeTask((task, inputData) async {
+    if (task == 'stopAlarmTask') {
+      try {
+        await Alarm.init();
+        final id = inputData?['alarmId'];
+        if (id != null) {
+          await Alarm.stop(id as int);
+        }
+      } catch (e) {}
+      return Future.value(true);
+    }
     try {
       final prefs = await SharedPreferences.getInstance();
       final mobile = prefs.getString('mobile');
       if (mobile != null && mobile.isNotEmpty) {
         await fetchAndScheduleForMobile(mobile);
       }
-    } catch (e) {}
+    } catch (e) {
+      // Background mein fail ho to bhi crash na ho, agli baar phir try hoga
+    }
+    // Agli raat 1 baje ke liye dobara khud ko schedule kar do
     await _scheduleNightlySync();
     return Future.value(true);
   });
@@ -255,6 +299,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
+      // Screen ON / app foreground hote hi baj raha alarm band kar do
       Alarm.stopAll();
     }
   }
@@ -275,6 +320,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       }
     }
 
+    // App khuli/foreground mein ho tab bhi push aane par turant alarm bajao
     fcm.FirebaseMessaging.onMessage.listen((fcm.RemoteMessage message) {
       triggerImmediateAlarm(_titleFromMessage(message));
     });
@@ -301,8 +347,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         _status = 'Pehle apna mobile number daalo.';
       });
       return;
-    }
-    final verifyUri = Uri.parse('https://zahidiya-mysore.pages.dev/api/verify-mobile?mobile=$mobile');
+    }    final verifyUri = Uri.parse('https://zahidiya-mysore.pages.dev/api/verify-mobile?mobile=$mobile');
     try {
       final verifyRes = await http.get(verifyUri).timeout(const Duration(seconds: 15));
       final verifyData = jsonDecode(verifyRes.body);
@@ -327,6 +372,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('mobile', mobile);
 
+    // Ab jo bhi FCM token pehle se mil chuka hai, use bhi is mobile se link kar do
     if (_fcmToken != null) {
       await sendTokenToBackend(mobile, _fcmToken!);
     }
