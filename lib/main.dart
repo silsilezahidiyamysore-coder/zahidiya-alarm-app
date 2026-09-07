@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:alarm/alarm.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:http/http.dart' as http;
@@ -261,12 +262,15 @@ Future<void> main() async {
   runApp(const ZahidiyaAlarmApp());
 }
 
+final navigatorKey = GlobalKey<NavigatorState>();
+
 class ZahidiyaAlarmApp extends StatelessWidget {
   const ZahidiyaAlarmApp({super.key});
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
+      navigatorKey: navigatorKey,
       title: 'Zahidiya Alarm',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
@@ -274,6 +278,58 @@ class ZahidiyaAlarmApp extends StatelessWidget {
         useMaterial3: true,
       ),
       home: const HomeScreen(),
+    );
+  }
+}
+
+// Alarm bajte hi yeh bada, saaf screen dikhta hai — "Band Karo" button
+// hamesha turant nazar aayega, chhota/chhupa hua nahi.
+class AlarmRingingScreen extends StatelessWidget {
+  final String title;
+  const AlarmRingingScreen({super.key, required this.title});
+
+  @override
+  Widget build(BuildContext context) {
+    return PopScope(
+      canPop: false,
+      child: Scaffold(
+        backgroundColor: Colors.green,
+        body: SafeArea(
+          child: Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24.0),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.alarm, color: Colors.white, size: 90),
+                  const SizedBox(height: 24),
+                  Text(
+                    title,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 60),
+                  ElevatedButton(
+                    onPressed: () async {
+                      await Alarm.stopAll();
+                      if (navigatorKey.currentState?.canPop() ?? false) {
+                        navigatorKey.currentState?.pop();
+                      }
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.white,
+                      foregroundColor: Colors.green,
+                      padding: const EdgeInsets.symmetric(horizontal: 48, vertical: 20),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                    ),
+                    child: const Text('🛑 Band Karo', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
@@ -291,6 +347,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   List<Map<String, dynamic>> _scheduledItems = [];
   bool _loading = false;
   String? _fcmToken;
+  static const _screenChannel = MethodChannel('zahidiya.alarm/screen');
 
   @override
   void initState() {
@@ -299,6 +356,28 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     _requestPermissions();
     _loadSavedMobile();
     _setupFCM();
+    // Power button dabakar screen OFF/lock hote hi (native side se signal
+    // aayega), baj raha alarm turant band kar do.
+    _screenChannel.setMethodCallHandler((call) async {
+      if (call.method == 'screenOff') {
+        await Alarm.stopAll();
+      }
+    });
+    // Alarm bajte hi apna bada "Band Karo" wala screen turant dikha do.
+    Alarm.ringing.listen((alarmSet) {
+      final isRinging = alarmSet.alarms.isNotEmpty;
+      final nav = navigatorKey.currentState;
+      if (nav == null) return;
+      if (isRinging) {
+        final title = alarmSet.alarms.first.notificationSettings.body;
+        nav.push(MaterialPageRoute(
+          builder: (_) => AlarmRingingScreen(title: title.isNotEmpty ? title : 'Alarm'),
+          fullscreenDialog: true,
+        ));
+      } else {
+        if (nav.canPop()) nav.pop();
+      }
+    });
   }
 
   @override
