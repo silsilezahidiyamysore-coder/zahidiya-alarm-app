@@ -6,6 +6,8 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:workmanager/workmanager.dart';
+import 'package:path_provider/path_provider.dart';
+import 'dart:io';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart' as fcm;
 
@@ -14,6 +16,38 @@ const String scheduleUrlBase =
 const String saveFcmTokenUrl =
     'https://zahidiya-mysore.pages.dev/api/save-fcm-token';
 const String dailySyncTaskName = 'zahidiyaDailyAlarmSync';
+
+// Admin ka upload kiya hua common ringtone download karke phone mein save karta hai
+// (taaki app band/FCM push ke waqt bhi bina internet ke bhi use ho sake).
+// Agar URL pehle jaisa hi hai to dobara download nahi karta.
+Future<String?> _getLocalTonePath(String? toneUrl) async {
+  if (toneUrl == null || toneUrl.isEmpty) return null;
+  try {
+    final dir = await getApplicationDocumentsDirectory();
+    final file = File('${dir.path}/custom_alarm_tone.mp3');
+    final prefs = await SharedPreferences.getInstance();
+    final savedUrl = prefs.getString('cached_tone_url');
+
+    if (savedUrl == toneUrl && await file.exists()) {
+      return file.path;
+    }
+
+    final response = await http.get(Uri.parse(toneUrl)).timeout(const Duration(seconds: 20));
+    if (response.statusCode == 200) {
+      await file.writeAsBytes(response.bodyBytes);
+      await prefs.setString('cached_tone_url', toneUrl);
+      return file.path;
+    }
+  } catch (e) {
+    // Download fail ho to purani cached file (agar ho) use kar lo
+    try {
+      final dir = await getApplicationDocumentsDirectory();
+      final file = File('${dir.path}/custom_alarm_tone.mp3');
+      if (await file.exists()) return file.path;
+    } catch (_) {}
+  }
+  return null;
+}
 
 int idFromString(String s) {
   int hash = 0;
@@ -41,6 +75,8 @@ Future<List<Map<String, dynamic>>> fetchAndScheduleForMobile(String mobile) asyn
   }
 
   final List<dynamic> schedule = data['schedule'] ?? [];
+  final String? toneUrl = data['tone_url'];
+  final String? localTonePath = await _getLocalTonePath(toneUrl);
   final now = DateTime.now();
   final List<Map<String, dynamic>> shownItems = [];
 
@@ -56,6 +92,7 @@ Future<List<Map<String, dynamic>>> fetchAndScheduleForMobile(String mobile) asyn
     final alarmSettings = AlarmSettings(
       id: alarmId,
       dateTime: dt,
+      assetAudioPath: localTonePath,
       loopAudio: true,
       vibrate: true,
       androidFullScreenIntent: true,
@@ -74,13 +111,26 @@ Future<List<Map<String, dynamic>>> fetchAndScheduleForMobile(String mobile) asyn
   return shownItems;
 }
 
+// Sirf pehle se cache mein saved tone file uthata hai — download nahi karta
+// (push aane ke waqt turant alarm bajna zaroori hai, download ka wait nahi karna).
+Future<String?> _getCachedTonePathOnly() async {
+  try {
+    final dir = await getApplicationDocumentsDirectory();
+    final file = File('${dir.path}/custom_alarm_tone.mp3');
+    if (await file.exists()) return file.path;
+  } catch (_) {}
+  return null;
+}
+
 // FCM se push aane par turant loud alarm bajata hai (Live/Class shuru hone ka signal).
 Future<void> triggerImmediateAlarm(String title) async {
   await Alarm.init();
   final int alarmId = idFromString('live_${DateTime.now().millisecondsSinceEpoch}');
+  final localTonePath = await _getCachedTonePathOnly();
   final alarmSettings = AlarmSettings(
     id: alarmId,
     dateTime: DateTime.now().add(const Duration(seconds: 2)),
+    assetAudioPath: localTonePath,
     loopAudio: true,
     vibrate: true,
     androidFullScreenIntent: true,
@@ -122,6 +172,26 @@ Future<void> firebaseMessagingBackgroundHandler(fcm.RemoteMessage message) async
 
 // Yeh function background isolate mein chalta hai, jab Workmanager
 // roz khud-ba-khud is app ko "jagakar" naye alarms set karwata hai.
+// Raat ko fix time (1:00 AM) par sync chalane ke liye — Fajr se kaafi pehle.
+Duration _delayUntilNext1AM() {
+  final now = DateTime.now();
+  var target = DateTime(now.year, now.month, now.day, 1, 0);
+  if (!now.isBefore(target)) {
+    target = target.add(const Duration(days: 1));
+  }
+  return target.difference(now);
+}
+
+Future<void> _scheduleNightlySync() async {
+  await Workmanager().registerOneOffTask(
+    dailySyncTaskName,
+    dailySyncTaskName,
+    initialDelay: _delayUntilNext1AM(),
+    constraints: Constraints(networkType: NetworkType.connected),
+    existingWorkPolicy: ExistingWorkPolicy.replace,
+  );
+}
+
 @pragma('vm:entry-point')
 void callbackDispatcher() {
   Workmanager().executeTask((task, inputData) async {
@@ -134,6 +204,8 @@ void callbackDispatcher() {
     } catch (e) {
       // Background mein fail ho to bhi crash na ho, agli baar phir try hoga
     }
+    // Agli raat 1 baje ke liye dobara khud ko schedule kar do
+    await _scheduleNightlySync();
     return Future.value(true);
   });
 }
@@ -146,12 +218,7 @@ Future<void> main() async {
   await Alarm.init();
 
   await Workmanager().initialize(callbackDispatcher);
-  await Workmanager().registerPeriodicTask(
-    dailySyncTaskName,
-    dailySyncTaskName,
-    frequency: const Duration(hours: 24),
-    constraints: Constraints(networkType: NetworkType.connected),
-  );
+  await _scheduleNightlySync();
 
   runApp(const ZahidiyaAlarmApp());
 }
@@ -180,7 +247,7 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
+class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   final _mobileController = TextEditingController();
   String _status = 'Apna mobile number daal kar "Alarms Set Karo" dabao.\n(Iske baad roz apne aap set hote rahenge.)';
   List<Map<String, dynamic>> _scheduledItems = [];
@@ -190,9 +257,24 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _requestPermissions();
     _loadSavedMobile();
     _setupFCM();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      // Screen ON / app foreground hote hi baj raha alarm band kar do
+      Alarm.stopAll();
+    }
   }
 
   Future<void> _setupFCM() async {
