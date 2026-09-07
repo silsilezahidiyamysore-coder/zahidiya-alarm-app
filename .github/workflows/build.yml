@@ -37,6 +37,9 @@ jobs:
       - name: Add Firebase config
         run: python3 scripts/patch_firebase.py
 
+      - name: Patch MainActivity for screen-off detection
+        run: python3 scripts/patch_mainactivity.py
+
       - name: Get Flutter packages
         run: flutter pub get
 
