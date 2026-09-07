@@ -184,6 +184,17 @@ Future<void> sendTokenToBackend(String mobile, String token) async {
 @pragma('vm:entry-point')
 Future<void> firebaseMessagingBackgroundHandler(fcm.RemoteMessage message) async {
   await Firebase.initializeApp();
+  if (message.data['type'] == 'refresh_settings') {
+    // Admin ne tone/duration badla — turant naya schedule+tone fetch karo, alarm mat bajao
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final mobile = prefs.getString('mobile');
+      if (mobile != null && mobile.isNotEmpty) {
+        await fetchAndScheduleForMobile(mobile);
+      }
+    } catch (e) {}
+    return;
+  }
   await triggerImmediateAlarm(_titleFromMessage(message));
 }
 
@@ -322,6 +333,15 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
     // App khuli/foreground mein ho tab bhi push aane par turant alarm bajao
     fcm.FirebaseMessaging.onMessage.listen((fcm.RemoteMessage message) {
+      if (message.data['type'] == 'refresh_settings') {
+        SharedPreferences.getInstance().then((prefs) {
+          final mobile = prefs.getString('mobile');
+          if (mobile != null && mobile.isNotEmpty) {
+            fetchAndScheduleForMobile(mobile);
+          }
+        });
+        return;
+      }
       triggerImmediateAlarm(_titleFromMessage(message));
     });
   }
