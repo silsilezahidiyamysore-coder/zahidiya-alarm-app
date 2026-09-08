@@ -75,7 +75,7 @@ Future<void> _scheduleStopAlarm(int alarmId, DateTime ringAt, int durationSecond
 
 // Backend se schedule laakar real alarms set karta hai.
 // Yeh function App ke andar (button dabane par) aur background
-// (Workmanager ke through, roz apne aap) — dono jagah use hota hai.
+// (Workmanager ke through, roz apne aap) â€” dono jagah use hota hai.
 Future<List<Map<String, dynamic>>> fetchAndScheduleForMobile(String mobile) async {
   await Alarm.init();
   final uri = Uri.parse('$scheduleUrlBase?mobile=$mobile');
@@ -115,7 +115,7 @@ Future<List<Map<String, dynamic>>> fetchAndScheduleForMobile(String mobile) asyn
       androidFullScreenIntent: true,
       volumeSettings: VolumeSettings.fixed(volume: 1.0),
       notificationSettings: NotificationSettings(
-        title: 'Zahidiya Alarm',
+        title: 'Silsila-e-Zahidiya Alarm',
         body: title,
         stopButton: 'Band Karo',
       ),
@@ -129,7 +129,7 @@ Future<List<Map<String, dynamic>>> fetchAndScheduleForMobile(String mobile) asyn
   return shownItems;
 }
 
-// Sirf pehle se cache mein saved tone file uthata hai — download nahi karta
+// Sirf pehle se cache mein saved tone file uthata hai â€” download nahi karta
 // (push aane ke waqt turant alarm bajna zaroori hai, download ka wait nahi karna).
 Future<String?> _getCachedTonePathOnly() async {
   try {
@@ -154,7 +154,7 @@ Future<void> triggerImmediateAlarm(String title) async {
     androidFullScreenIntent: true,
     volumeSettings: VolumeSettings.fixed(volume: 1.0),
     notificationSettings: NotificationSettings(
-      title: 'Zahidiya Alarm',
+      title: 'Silsila-e-Zahidiya Alarm',
       body: title,
       stopButton: 'Band Karo',
     ),
@@ -186,7 +186,7 @@ Future<void> sendTokenToBackend(String mobile, String token) async {
 Future<void> firebaseMessagingBackgroundHandler(fcm.RemoteMessage message) async {
   await Firebase.initializeApp();
   if (message.data['type'] == 'refresh_settings') {
-    // Admin ne tone/duration badla — turant naya schedule+tone fetch karo, alarm mat bajao
+    // Admin ne tone/duration badla â€” turant naya schedule+tone fetch karo, alarm mat bajao
     try {
       final prefs = await SharedPreferences.getInstance();
       final mobile = prefs.getString('mobile');
@@ -201,7 +201,7 @@ Future<void> firebaseMessagingBackgroundHandler(fcm.RemoteMessage message) async
 
 // Yeh function background isolate mein chalta hai, jab Workmanager
 // roz khud-ba-khud is app ko "jagakar" naye alarms set karwata hai.
-// Raat ko fix time (1:00 AM) par sync chalane ke liye — Fajr se kaafi pehle.
+// Raat ko fix time (1:00 AM) par sync chalane ke liye â€” Fajr se kaafi pehle.
 Duration _delayUntilNext1AM() {
   final now = DateTime.now();
   var target = DateTime(now.year, now.month, now.day, 1, 0);
@@ -271,7 +271,7 @@ class ZahidiyaAlarmApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       navigatorKey: navigatorKey,
-      title: 'Zahidiya Alarm',
+      title: 'Silsila-e-Zahidiya Alarm',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         primarySwatch: Colors.green,
@@ -282,7 +282,7 @@ class ZahidiyaAlarmApp extends StatelessWidget {
   }
 }
 
-// Alarm bajte hi yeh bada, saaf screen dikhta hai — "Band Karo" button
+// Alarm bajte hi yeh bada, saaf screen dikhta hai â€” "Band Karo" button
 // hamesha turant nazar aayega, chhota/chhupa hua nahi.
 class AlarmRingingScreen extends StatelessWidget {
   final String title;
@@ -322,7 +322,7 @@ class AlarmRingingScreen extends StatelessWidget {
                       padding: const EdgeInsets.symmetric(horizontal: 48, vertical: 20),
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                     ),
-                    child: const Text('🛑 Band Karo', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
+                    child: const Text('ðŸ›‘ Band Karo', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
                   ),
                 ],
               ),
@@ -504,7 +504,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Zahidiya Alarm'),
+        title: const Text('Silsila-e-Zahidiya Alarm'),
         backgroundColor: Colors.green,
         foregroundColor: Colors.white,
       ),
@@ -545,7 +545,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               style: OutlinedButton.styleFrom(
                 minimumSize: const Size(double.infinity, 44),
               ),
-              child: const Text('🔋 Battery Settings Kholo (Alarm bina rukawat bajne ke liye)'),
+              child: const Text('ðŸ”‹ Battery Settings Kholo (Alarm bina rukawat bajne ke liye)'),
             ),
             const SizedBox(height: 16),
             Text(
