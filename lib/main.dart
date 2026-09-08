@@ -537,6 +537,16 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                     )
                   : const Text('Alarms Set Karo'),
             ),
+            const SizedBox(height: 10),
+            OutlinedButton(
+              onPressed: () async {
+                await openAppSettings();
+              },
+              style: OutlinedButton.styleFrom(
+                minimumSize: const Size(double.infinity, 44),
+              ),
+              child: const Text('🔋 Battery Settings Kholo (Alarm bina rukawat bajne ke liye)'),
+            ),
             const SizedBox(height: 16),
             Text(
               _status,
