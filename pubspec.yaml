@@ -1,28 +1,56 @@
-name: zahidiya_alarm
-description: "Zahidiya Alarm - silent mode mein bhi loud alarm bajane wali companion app."
-publish_to: 'none'
-version: 1.0.0+1
+name: Build Zahidiya Alarm APK
 
-environment:
-  sdk: '>=3.3.0 <4.0.0'
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch: {}
 
-dependencies:
-  flutter:
-    sdk: flutter
-  alarm: ^5.12.0
-  permission_handler: ^11.3.1
-  cupertino_icons: ^1.0.6
-  http: ^1.2.0
-  shared_preferences: ^2.2.3
-  workmanager: ^0.10.9
-  path_provider: ^2.1.1
-  firebase_core: ^3.6.0
-  firebase_messaging: ^15.1.3
-  
-dev_dependencies:
-  flutter_test:
-    sdk: flutter
-  flutter_lints: ^4.0.0
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
 
-flutter:
-  uses-material-design: true
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+
+      - name: Generate Android platform folder if missing
+        run: |
+          if [ ! -d "android" ]; then
+           flutter create --platforms=android --org com.zahidiya --project-name alarm temp_scaffold
+            cp -r temp_scaffold/android ./android
+            rm -rf temp_scaffold
+          fi
+
+      - name: Patch build.gradle
+        run: python3 scripts/patch_gradle.py
+
+      - name: Patch AndroidManifest.xml
+        run: python3 scripts/patch_manifest.py
+
+      - name: Patch settings.gradle kotlin version
+        run: python3 scripts/patch_settings.py
+
+      - name: Add Firebase config
+        run: python3 scripts/patch_firebase.py
+
+      - name: Patch MainActivity for screen-off detection
+        run: python3 scripts/patch_mainactivity.py
+
+      - name: Get Flutter packages
+        run: flutter pub get
+
+      - name: Generate app icon
+        run: flutter pub run flutter_launcher_icons
+
+      - name: Build APK
+        run: flutter build apk --release
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: zahidiya-alarm-apk
+          path: build/app/outputs/flutter-apk/app-release.apk
