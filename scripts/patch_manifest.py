@@ -3,6 +3,9 @@ path = "android/app/src/main/AndroidManifest.xml"
 with open(path) as f:
     content = f.read()
 
+# App ka display naam "alarm" ki jagah "Zahidiya Alarm" karo (Settings/App-list mein yehi dikhta hai)
+content = content.replace('android:label="alarm"', 'android:label="Silsila-e-Zahidiya Alarm"')
+
 permission_lines = [
     "android.permission.INTERNET",
     "android.permission.RECEIVE_BOOT_COMPLETED",
