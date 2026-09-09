@@ -280,10 +280,64 @@ Future<void> main() async {
     // Fail ho to bhi app aage badhe
   }
 
+  await AppLang.load();
   runApp(const ZahidiyaAlarmApp());
 }
 
 final navigatorKey = GlobalKey<NavigatorState>();
+
+// ---------- LANGUAGE (Urdu / English) ----------
+class AppLang {
+  static String current = 'ur';
+  static Future<void> load() async {
+    final prefs = await SharedPreferences.getInstance();
+    current = prefs.getString('app_lang') ?? 'ur';
+  }
+  static Future<void> toggle() async {
+    current = current == 'ur' ? 'en' : 'ur';
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('app_lang', current);
+  }
+}
+
+const Map<String, Map<String, String>> kStrings = {
+  'en': {
+    'app_title': 'Silsila-e-Zahidiya Alarm',
+    'mobile_label': 'Mobile Number',
+    'set_alarms_btn': 'Set Alarms',
+    'battery_btn': '🔋 Open Battery Settings (for alarm without interruption)',
+    'band_karo_btn': '🛑 Stop',
+    'default_status': 'Enter your mobile number and tap "Set Alarms".\n(After this they will set automatically every day.)',
+    'status_empty_mobile': 'First enter your mobile number.',
+    'status_not_registered': 'This mobile number is not registered. Please register/login on the website first.',
+    'status_verify_error': 'Problem verifying, please check your internet.',
+    'status_fetching': 'Fetching schedule...',
+    'status_no_alarms_left': 'No alarms left for today (all have passed).',
+    'status_error_prefix': 'Internet or server issue: ',
+    'lang_toggle': '🌐 اردو',
+  },
+  'ur': {
+    'app_title': 'سلسلہ زاہدیہ الارم',
+    'mobile_label': 'موبائل نمبر',
+    'set_alarms_btn': 'الارمز سیٹ کریں',
+    'battery_btn': '🔋 بیٹری سیٹنگز کھولیں (الارم بلا رکاوٹ بجنے کے لیے)',
+    'band_karo_btn': '🛑 بند کریں',
+    'default_status': 'اپنا موبائل نمبر ڈال کر "الارمز سیٹ کریں" دبائیں۔\n(اس کے بعد روز خود بخود سیٹ ہوتے رہیں گے۔)',
+    'status_empty_mobile': 'پہلے اپنا موبائل نمبر ڈالیں۔',
+    'status_not_registered': 'یہ موبائل نمبر رجسٹرڈ نہیں ہے۔ پہلے ویب سائٹ پر رجسٹر/لاگ ان کریں۔',
+    'status_verify_error': 'تصدیق میں مسئلہ ہوا، انٹرنیٹ چیک کریں۔',
+    'status_fetching': 'شیڈول لایا جا رہا ہے...',
+    'status_no_alarms_left': 'آج کے باقی کوئی الارم نہیں بچا (سب گزر چکے)۔',
+    'status_error_prefix': 'انٹرنیٹ یا سرور میں مسئلہ: ',
+    'lang_toggle': '🌐 English',
+  },
+};
+
+String tr(String key) => kStrings[AppLang.current]?[key] ?? kStrings['en']![key] ?? key;
+
+String trSetSuccess(int count) => AppLang.current == 'ur'
+    ? '$count الارم سیٹ ہو گئے۔ اب روز خود بخود سیٹ ہوتے رہیں گے۔'
+    : '$count alarm(s) set. They will now set automatically every day.';
 
 class ZahidiyaAlarmApp extends StatelessWidget {
   const ZahidiyaAlarmApp({super.key});
@@ -343,7 +397,7 @@ class AlarmRingingScreen extends StatelessWidget {
                       padding: const EdgeInsets.symmetric(horizontal: 48, vertical: 20),
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                     ),
-                    child: const Text('🛑 Band Karo', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
+                    child: Text(tr('band_karo_btn'), style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
                   ),
                 ],
               ),
@@ -364,7 +418,7 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   final _mobileController = TextEditingController();
-  String _status = 'Apna mobile number daal kar "Alarms Set Karo" dabao.\n(Iske baad roz apne aap set hote rahenge.)';
+  String _status = '';
   List<Map<String, dynamic>> _scheduledItems = [];
   bool _loading = false;
   String? _fcmToken;
@@ -373,6 +427,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   @override
   void initState() {
     super.initState();
+    _status = tr('default_status');
     WidgetsBinding.instance.addObserver(this);
     _requestPermissions();
     _loadSavedMobile();
@@ -464,7 +519,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     final mobile = _mobileController.text.trim();
     if (mobile.isEmpty) {
       setState(() {
-        _status = 'Pehle apna mobile number daalo.';
+        _status = tr('status_empty_mobile');
       });
       return;
     }    final verifyUri = Uri.parse('https://zahidiya-mysore.pages.dev/api/verify-mobile?mobile=$mobile');
@@ -473,20 +528,20 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       final verifyData = jsonDecode(verifyRes.body);
       if (verifyData['registered'] != true) {
         setState(() {
-          _status = 'Yeh mobile number registered nahi hai. Pehle website par register/login karo.';
+          _status = tr('status_not_registered');
         });
         return;
       }
     } catch (e) {
       setState(() {
-        _status = 'Verify karne mein dikkat aayi, internet check karo.';
+        _status = tr('status_verify_error');
       });
       return;
     }
 
     setState(() {
       _loading = true;
-      _status = 'Schedule laaya ja raha hai...';
+      _status = tr('status_fetching');
     });
 
     final prefs = await SharedPreferences.getInstance();
@@ -503,13 +558,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         _loading = false;
         _scheduledItems = items;
         _status = items.isNotEmpty
-            ? '${items.length} alarm(s) set ho gaye. Ab roz apne aap set hote rahenge.'
-            : 'Aaj ke baaki koi alarm nahi bacha (sab guzar chuke).';
+            ? trSetSuccess(items.length)
+            : tr('status_no_alarms_left');
       });
     } catch (e) {
       setState(() {
         _loading = false;
-        _status = 'Internet ya server mein dikkat: $e';
+        _status = tr('status_error_prefix') + '$e';
       });
     }
   }
@@ -525,9 +580,18 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Silsila-e-Zahidiya Alarm'),
+        title: Text(tr('app_title')),
         backgroundColor: Colors.green,
         foregroundColor: Colors.white,
+        actions: [
+          TextButton(
+            onPressed: () async {
+              await AppLang.toggle();
+              setState(() {});
+            },
+            child: Text(tr('lang_toggle'), style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+          ),
+        ],
       ),
       body: Padding(
         padding: const EdgeInsets.all(20.0),
@@ -536,9 +600,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             TextField(
               controller: _mobileController,
               keyboardType: TextInputType.phone,
-              decoration: const InputDecoration(
-                labelText: 'Mobile Number',
-                border: OutlineInputBorder(),
+              decoration: InputDecoration(
+                labelText: tr('mobile_label'),
+                border: const OutlineInputBorder(),
               ),
             ),
             const SizedBox(height: 16),
@@ -556,7 +620,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                       width: 20,
                       child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
                     )
-                  : const Text('Alarms Set Karo'),
+                  : Text(tr('set_alarms_btn')),
             ),
             const SizedBox(height: 10),
             OutlinedButton(
@@ -566,7 +630,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               style: OutlinedButton.styleFrom(
                 minimumSize: const Size(double.infinity, 44),
               ),
-              child: const Text('🔋 Battery Settings Kholo (Alarm bina rukawat bajne ke liye)'),
+              child: Text(tr('battery_btn')),
             ),
             const SizedBox(height: 16),
             Text(
