@@ -7,6 +7,7 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:workmanager/workmanager.dart';
+import 'package:android_alarm_manager_plus/android_alarm_manager_plus.dart';
 import 'package:path_provider/path_provider.dart';
 import 'dart:io';
 import 'package:firebase_core/firebase_core.dart';
@@ -75,7 +76,7 @@ Future<void> _scheduleStopAlarm(int alarmId, DateTime ringAt, int durationSecond
 
 // Backend se schedule laakar real alarms set karta hai.
 // Yeh function App ke andar (button dabane par) aur background
-// (Workmanager ke through, roz apne aap) â€” dono jagah use hota hai.
+// (Workmanager ke through, roz apne aap) — dono jagah use hota hai.
 Future<List<Map<String, dynamic>>> fetchAndScheduleForMobile(String mobile) async {
   await Alarm.init();
   final uri = Uri.parse('$scheduleUrlBase?mobile=$mobile');
@@ -129,7 +130,7 @@ Future<List<Map<String, dynamic>>> fetchAndScheduleForMobile(String mobile) asyn
   return shownItems;
 }
 
-// Sirf pehle se cache mein saved tone file uthata hai â€” download nahi karta
+// Sirf pehle se cache mein saved tone file uthata hai — download nahi karta
 // (push aane ke waqt turant alarm bajna zaroori hai, download ka wait nahi karna).
 Future<String?> _getCachedTonePathOnly() async {
   try {
@@ -186,7 +187,7 @@ Future<void> sendTokenToBackend(String mobile, String token) async {
 Future<void> firebaseMessagingBackgroundHandler(fcm.RemoteMessage message) async {
   await Firebase.initializeApp();
   if (message.data['type'] == 'refresh_settings') {
-    // Admin ne tone/duration badla â€” turant naya schedule+tone fetch karo, alarm mat bajao
+    // Admin ne tone/duration badla — turant naya schedule+tone fetch karo, alarm mat bajao
     try {
       final prefs = await SharedPreferences.getInstance();
       final mobile = prefs.getString('mobile');
@@ -199,26 +200,47 @@ Future<void> firebaseMessagingBackgroundHandler(fcm.RemoteMessage message) async
   await triggerImmediateAlarm(_titleFromMessage(message));
 }
 
-// Yeh function background isolate mein chalta hai, jab Workmanager
+// Yeh function background isolate mein chalta hai, jab AndroidAlarmManager
 // roz khud-ba-khud is app ko "jagakar" naye alarms set karwata hai.
-// Raat ko fix time (1:00 AM) par sync chalane ke liye â€” Fajr se kaafi pehle.
-Duration _delayUntilNext1AM() {
+// Raat ko fix time (1:00 AM) par sync chalane ke liye — Fajr se kaafi pehle.
+// AndroidAlarmManager (exact + wakeup) WorkManager se zyada bharosemand hai
+// kyunki ye Doze/battery-saver mode mein bhi guaranteed time par jaagta hai.
+DateTime _next1AM() {
   final now = DateTime.now();
   var target = DateTime(now.year, now.month, now.day, 1, 0);
   if (!now.isBefore(target)) {
     target = target.add(const Duration(days: 1));
   }
-  return target.difference(now);
+  return target;
 }
 
+const int nightlySyncAlarmId = 900001;
+
 Future<void> _scheduleNightlySync() async {
-  await Workmanager().registerOneOffTask(
-    dailySyncTaskName,
-    dailySyncTaskName,
-    initialDelay: _delayUntilNext1AM(),
-    constraints: Constraints(networkType: NetworkType.connected),
-    existingWorkPolicy: ExistingWorkPolicy.replace,
+  await AndroidAlarmManager.oneShotAt(
+    _next1AM(),
+    nightlySyncAlarmId,
+    _nightlySyncCallback,
+    exact: true,
+    wakeup: true,
+    rescheduleOnReboot: true,
   );
+}
+
+@pragma('vm:entry-point')
+void _nightlySyncCallback() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  try {
+    final prefs = await SharedPreferences.getInstance();
+    final mobile = prefs.getString('mobile');
+    if (mobile != null && mobile.isNotEmpty) {
+      await fetchAndScheduleForMobile(mobile);
+    }
+  } catch (e) {
+    // Background mein fail ho to bhi crash na ho, agli baar phir try hoga
+  }
+  // Agli raat 1 baje ke liye dobara khud ko schedule kar do
+  await _scheduleNightlySync();
 }
 
 @pragma('vm:entry-point')
@@ -232,19 +254,7 @@ void callbackDispatcher() {
           await Alarm.stop(id as int);
         }
       } catch (e) {}
-      return Future.value(true);
     }
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final mobile = prefs.getString('mobile');
-      if (mobile != null && mobile.isNotEmpty) {
-        await fetchAndScheduleForMobile(mobile);
-      }
-    } catch (e) {
-      // Background mein fail ho to bhi crash na ho, agli baar phir try hoga
-    }
-    // Agli raat 1 baje ke liye dobara khud ko schedule kar do
-    await _scheduleNightlySync();
     return Future.value(true);
   });
 }
@@ -255,7 +265,10 @@ Future<void> main() async {
   fcm.FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
 
   await Alarm.init();
+  await AndroidAlarmManager.initialize();
 
+  // stopAlarmTask (duration ke baad alarm band karna) ke liye Workmanager
+  // abhi bhi use hota hai — ye chhota/short-delay kaam hai.
   await Workmanager().initialize(callbackDispatcher);
   await _scheduleNightlySync();
 
@@ -282,7 +295,7 @@ class ZahidiyaAlarmApp extends StatelessWidget {
   }
 }
 
-// Alarm bajte hi yeh bada, saaf screen dikhta hai â€” "Band Karo" button
+// Alarm bajte hi yeh bada, saaf screen dikhta hai — "Band Karo" button
 // hamesha turant nazar aayega, chhota/chhupa hua nahi.
 class AlarmRingingScreen extends StatelessWidget {
   final String title;
@@ -322,7 +335,7 @@ class AlarmRingingScreen extends StatelessWidget {
                       padding: const EdgeInsets.symmetric(horizontal: 48, vertical: 20),
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                     ),
-                    child: const Text('ðŸ›‘ Band Karo', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
+                    child: const Text('🛑 Band Karo', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
                   ),
                 ],
               ),
@@ -545,7 +558,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               style: OutlinedButton.styleFrom(
                 minimumSize: const Size(double.infinity, 44),
               ),
-              child: const Text('ðŸ”‹ Battery Settings Kholo (Alarm bina rukawat bajne ke liye)'),
+              child: const Text('🔋 Battery Settings Kholo (Alarm bina rukawat bajne ke liye)'),
             ),
             const SizedBox(height: 16),
             Text(
