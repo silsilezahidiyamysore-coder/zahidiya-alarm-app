@@ -12,6 +12,7 @@ import 'package:path_provider/path_provider.dart';
 import 'dart:io';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart' as fcm;
+import 'package:google_fonts/google_fonts.dart';
 
 const String scheduleUrlBase =
     'https://zahidiya-mysore.pages.dev/api/get-alarm-schedule';
@@ -335,6 +336,16 @@ const Map<String, Map<String, String>> kStrings = {
 
 String tr(String key) => kStrings[AppLang.current]?[key] ?? kStrings['en']![key] ?? key;
 
+// Website jaisa hi Nastaliq font — Urdu mode mein hamesha yehi use hoga,
+// chahe phone mein koi bhi Urdu font installed ho ya na ho.
+TextStyle appFont([TextStyle? base]) {
+  final b = base ?? const TextStyle();
+  if (AppLang.current == 'ur') {
+    return GoogleFonts.notoNastaliqUrdu(textStyle: b, height: 1.9);
+  }
+  return b;
+}
+
 String trSetSuccess(int count) => AppLang.current == 'ur'
     ? '$count الارم سیٹ ہو گئے۔ اب روز خود بخود سیٹ ہوتے رہیں گے۔'
     : '$count alarm(s) set. They will now set automatically every day.';
@@ -381,7 +392,7 @@ class AlarmRingingScreen extends StatelessWidget {
                   Text(
                     title,
                     textAlign: TextAlign.center,
-                    style: const TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold),
+                    style: appFont(const TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold)),
                   ),
                   const SizedBox(height: 60),
                   ElevatedButton(
@@ -397,7 +408,7 @@ class AlarmRingingScreen extends StatelessWidget {
                       padding: const EdgeInsets.symmetric(horizontal: 48, vertical: 20),
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                     ),
-                    child: Text(tr('band_karo_btn'), style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
+                    child: Text(tr('band_karo_btn'), style: appFont(const TextStyle(fontSize: 22, fontWeight: FontWeight.bold))),
                   ),
                 ],
               ),
@@ -580,7 +591,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text(tr('app_title')),
+        title: Text(tr('app_title'), style: appFont()),
         backgroundColor: Colors.green,
         foregroundColor: Colors.white,
         actions: [
@@ -589,7 +600,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               await AppLang.toggle();
               setState(() {});
             },
-            child: Text(tr('lang_toggle'), style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+            child: Text(tr('lang_toggle'), style: appFont(const TextStyle(color: Colors.white, fontWeight: FontWeight.bold))),
           ),
         ],
       ),
@@ -602,6 +613,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               keyboardType: TextInputType.phone,
               decoration: InputDecoration(
                 labelText: tr('mobile_label'),
+                labelStyle: appFont(),
                 border: const OutlineInputBorder(),
               ),
             ),
@@ -620,7 +632,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                       width: 20,
                       child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
                     )
-                  : Text(tr('set_alarms_btn')),
+                  : Text(tr('set_alarms_btn'), style: appFont()),
             ),
             const SizedBox(height: 10),
             OutlinedButton(
@@ -630,13 +642,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               style: OutlinedButton.styleFrom(
                 minimumSize: const Size(double.infinity, 44),
               ),
-              child: Text(tr('battery_btn')),
+              child: Text(tr('battery_btn'), style: appFont()),
             ),
             const SizedBox(height: 16),
             Text(
               _status,
               textAlign: TextAlign.center,
-              style: const TextStyle(fontSize: 15),
+              style: appFont(const TextStyle(fontSize: 15)),
             ),
             const SizedBox(height: 16),
             Expanded(
@@ -647,8 +659,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                   return Card(
                     child: ListTile(
                       leading: const Icon(Icons.alarm, color: Colors.green),
-                      title: Text(item['title']),
-                      trailing: Text(_formatTime(item['time'] as DateTime)),
+                      title: Text(item['title'], style: appFont()),
+                      trailing: Text(_formatTime(item['time'] as DateTime), style: appFont()),
                     ),
                   );
                 },
