@@ -265,12 +265,20 @@ Future<void> main() async {
   fcm.FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
 
   await Alarm.init();
-  await AndroidAlarmManager.initialize();
+  try {
+    await AndroidAlarmManager.initialize();
+  } catch (e) {
+    // Fail ho to bhi app aage badhe, splash par atkna nahi chahiye
+  }
 
   // stopAlarmTask (duration ke baad alarm band karna) ke liye Workmanager
   // abhi bhi use hota hai — ye chhota/short-delay kaam hai.
   await Workmanager().initialize(callbackDispatcher);
-  await _scheduleNightlySync();
+  try {
+    await _scheduleNightlySync();
+  } catch (e) {
+    // Fail ho to bhi app aage badhe
+  }
 
   runApp(const ZahidiyaAlarmApp());
 }
