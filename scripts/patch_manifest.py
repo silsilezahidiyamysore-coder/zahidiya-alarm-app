@@ -40,7 +40,7 @@ aam_tags = (
     '    <service android:name="dev.fluttercommunity.plus.androidalarmmanager.AlarmService"\n'
     '        android:permission="android.permission.BIND_JOB_SERVICE" android:exported="false"/>\n'
     '    <receiver android:name="dev.fluttercommunity.plus.androidalarmmanager.AlarmBroadcastReceiver" android:exported="false"/>\n'
-    '    <receiver android:name="dev.fluttercommunity.plus.androidalarmmanager.RebootBroadcastReceiver" android:enabled="false">\n'
+    '    <receiver android:name="dev.fluttercommunity.plus.androidalarmmanager.RebootBroadcastReceiver" android:enabled="false" android:exported="true">\n'
     '        <intent-filter>\n'
     '            <action android:name="android.intent.action.BOOT_COMPLETED"/>\n'
     '        </intent-filter>\n'
