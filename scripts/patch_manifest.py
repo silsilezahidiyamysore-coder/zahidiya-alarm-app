@@ -33,6 +33,22 @@ service_tag = '    <service android:name="com.gdelataillade.alarm.services.Notif
 if "NotificationOnKillService" not in content:
     content = content.replace("</application>", service_tag + "</application>")
 
+# android_alarm_manager_plus ko kaam karne ke liye ye service + 2 receivers zaroori hain,
+# warna AndroidAlarmManager.initialize() call fail ho jaata hai aur app splash screen
+# par hi atka reh jaata hai (aage badhta hi nahi).
+aam_tags = (
+    '    <service android:name="dev.fluttercommunity.plus.androidalarmmanager.AlarmService"\n'
+    '        android:permission="android.permission.BIND_JOB_SERVICE" android:exported="false"/>\n'
+    '    <receiver android:name="dev.fluttercommunity.plus.androidalarmmanager.AlarmBroadcastReceiver" android:exported="false"/>\n'
+    '    <receiver android:name="dev.fluttercommunity.plus.androidalarmmanager.RebootBroadcastReceiver" android:enabled="false">\n'
+    '        <intent-filter>\n'
+    '            <action android:name="android.intent.action.BOOT_COMPLETED"/>\n'
+    '        </intent-filter>\n'
+    '    </receiver>\n'
+)
+if "androidalarmmanager.AlarmService" not in content:
+    content = content.replace("</application>", aam_tags + "</application>")
+
 with open(path, "w") as f:
     f.write(content)
 
