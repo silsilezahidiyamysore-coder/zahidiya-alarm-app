@@ -255,6 +255,18 @@ void callbackDispatcher() {
           await Alarm.stop(id as int);
         }
       } catch (e) {}
+    } else if (task == 'safetyResyncTask') {
+      // Har 15 minute mein ek "safety check" — agar kisi wajah se (phone restart,
+      // OEM battery-killer, waghera) exact alarms cancel ho gaye hon, to yahan se
+      // dobara schedule ho jaate hain. Ye AndroidAlarmManager ke sath ek extra
+      // backup hai, WorkManager reboot ke baad khud-ba-khud phir chalta hai.
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        final mobile = prefs.getString('mobile');
+        if (mobile != null && mobile.isNotEmpty) {
+          await fetchAndScheduleForMobile(mobile);
+        }
+      } catch (e) {}
     }
     return Future.value(true);
   });
@@ -280,6 +292,18 @@ Future<void> main() async {
   } catch (e) {
     // Fail ho to bhi app aage badhe
   }
+  try {
+    // Ye ek baar register hone ke baad hamesha chalta rahega (reboot ke baad bhi,
+    // WorkManager khud-ba-khud phir se register kar leta hai) — koi extra kaam
+    // nahi karna padega. Agar pehle se registered hai to ye no-op hai.
+    await Workmanager().registerPeriodicTask(
+      'zahidiya_safety_resync',
+      'safetyResyncTask',
+      frequency: const Duration(minutes: 15),
+      existingWorkPolicy: ExistingWorkPolicy.keep,
+      constraints: Constraints(networkType: NetworkType.connected),
+    );
+  } catch (e) {}
 
   await AppLang.load();
   try {
@@ -321,6 +345,7 @@ const Map<String, Map<String, String>> kStrings = {
     'status_no_alarms_left': 'No alarms left for today (all have passed).',
     'status_error_prefix': 'Internet or server issue: ',
     'lang_toggle': '🌐 اردو',
+    'prayer_start_label': 'Start', 'prayer_end_label': 'End',
   },
   'ur': {
     'app_title': 'سلسلہ زاہدیہ الارم',
@@ -336,6 +361,7 @@ const Map<String, Map<String, String>> kStrings = {
     'status_no_alarms_left': 'آج کے باقی کوئی الارم نہیں بچا (سب گزر چکے)۔',
     'status_error_prefix': 'انٹرنیٹ یا سرور میں مسئلہ: ',
     'lang_toggle': '🌐 English',
+    'prayer_start_label': 'شروع', 'prayer_end_label': 'ختم',
   },
 };
 
@@ -347,6 +373,42 @@ String tr(String key) => kStrings[AppLang.current]?[key] ?? kStrings['en']![key]
 const Map<String, String> _prayerNameUr = {
   'Fajr': 'فجر', 'Dhuhr': 'ظہر', 'Asr': 'عصر', 'Maghrib': 'مغرب', 'Isha': 'عشاء',
 };
+
+String prayerLabel(String name) => AppLang.current == 'ur' ? (_prayerNameUr[name] ?? name) : name;
+
+// Har namaz ka "shuru" aur "khatam" alarm alag-alag items hote hain (backend se) —
+// yahan dono ko ek hi prayer ke naam se jod kar ek group bana dete hain, taaki
+// UI mein ek hi box mein dono time (Start + End) dikhein.
+List<Map<String, dynamic>> _groupScheduledItems(List<Map<String, dynamic>> items) {
+  final Map<String, Map<String, dynamic>> groups = {};
+  final List<Map<String, dynamic>> others = [];
+  final startRe = RegExp(r'^(Fajr|Dhuhr|Asr|Maghrib|Isha) ki namaz ka waqt ho gaya hai$');
+  final endRe = RegExp(r'^⏳ (Fajr|Dhuhr|Asr|Maghrib|Isha) ki namaz khatam hone wali hai$');
+  for (final item in items) {
+    final title = item['title'] as String;
+    final time = item['time'] as DateTime;
+    final sm = startRe.firstMatch(title);
+    final em = endRe.firstMatch(title);
+    if (sm != null) {
+      final name = sm.group(1)!;
+      groups.putIfAbsent(name, () => {'type': 'prayer', 'prayer': name});
+      groups[name]!['start'] = time;
+    } else if (em != null) {
+      final name = em.group(1)!;
+      groups.putIfAbsent(name, () => {'type': 'prayer', 'prayer': name});
+      groups[name]!['end'] = time;
+    } else {
+      others.add({'type': 'other', 'title': title, 'time': time});
+    }
+  }
+  final result = <Map<String, dynamic>>[...groups.values, ...others];
+  result.sort((a, b) {
+    final DateTime ta = a['type'] == 'prayer' ? (a['start'] ?? a['end']) as DateTime : a['time'] as DateTime;
+    final DateTime tb = b['type'] == 'prayer' ? (b['start'] ?? b['end']) as DateTime : b['time'] as DateTime;
+    return ta.compareTo(tb);
+  });
+  return result;
+}
 
 String translateAlarmTitle(String title) {
   if (AppLang.current != 'ur') return title;
@@ -626,7 +688,15 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               await AppLang.toggle();
               setState(() {});
             },
-            child: Text(tr('lang_toggle'), style: appFont(const TextStyle(color: Colors.white, fontWeight: FontWeight.bold))),
+            child: Text(
+              tr('lang_toggle'),
+              style: AppLang.current == 'en'
+                  ? GoogleFonts.notoNastaliqUrdu(
+                      textStyle: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                      height: 1.9,
+                    )
+                  : const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+            ),
           ),
         ],
       ),
@@ -678,19 +748,59 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             ),
             const SizedBox(height: 16),
             Expanded(
-              child: ListView.builder(
-                itemCount: _scheduledItems.length,
-                itemBuilder: (context, index) {
-                  final item = _scheduledItems[index];
-                  return Card(
-                    child: ListTile(
-                      leading: const Icon(Icons.alarm, color: Colors.green),
-                      title: Text(translateAlarmTitle(item['title']), style: appFont()),
-                      trailing: Text(_formatTime(item['time'] as DateTime), style: appFont()),
-                    ),
-                  );
-                },
-              ),
+              child: Builder(builder: (context) {
+                final grouped = _groupScheduledItems(_scheduledItems);
+                return ListView.builder(
+                  itemCount: grouped.length,
+                  itemBuilder: (context, index) {
+                    final g = grouped[index];
+                    if (g['type'] == 'prayer') {
+                      final DateTime? start = g['start'] as DateTime?;
+                      final DateTime? end = g['end'] as DateTime?;
+                      return Card(
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  const Icon(Icons.alarm, color: Colors.green),
+                                  const SizedBox(width: 10),
+                                  Text(prayerLabel(g['prayer'] as String), style: appFont(const TextStyle(fontWeight: FontWeight.bold, fontSize: 16))),
+                                ],
+                              ),
+                              const Divider(height: 14),
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Text(tr('prayer_start_label'), style: appFont(const TextStyle(color: Colors.black54))),
+                                  Text(start != null ? _formatTime(start) : '—', style: appFont()),
+                                ],
+                              ),
+                              const SizedBox(height: 4),
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Text(tr('prayer_end_label'), style: appFont(const TextStyle(color: Colors.black54))),
+                                  Text(end != null ? _formatTime(end) : '—', style: appFont()),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    }
+                    return Card(
+                      child: ListTile(
+                        leading: const Icon(Icons.alarm, color: Colors.green),
+                        title: Text(translateAlarmTitle(g['title'] as String), style: appFont()),
+                        trailing: Text(_formatTime(g['time'] as DateTime), style: appFont()),
+                      ),
+                    );
+                  },
+                );
+              }),
             ),
           ],
         ),
