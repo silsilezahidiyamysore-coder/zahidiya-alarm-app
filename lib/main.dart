@@ -391,14 +391,14 @@ List<Map<String, dynamic>> _groupScheduledItems(List<Map<String, dynamic>> items
     final em = endRe.firstMatch(title);
     if (sm != null) {
       final name = sm.group(1)!;
-      groups.putIfAbsent(name, () => {'type': 'prayer', 'prayer': name});
+      groups.putIfAbsent(name, () => <String, dynamic>{'type': 'prayer', 'prayer': name});
       groups[name]!['start'] = time;
     } else if (em != null) {
       final name = em.group(1)!;
-      groups.putIfAbsent(name, () => {'type': 'prayer', 'prayer': name});
+      groups.putIfAbsent(name, () => <String, dynamic>{'type': 'prayer', 'prayer': name});
       groups[name]!['end'] = time;
     } else {
-      others.add({'type': 'other', 'title': title, 'time': time});
+      others.add(<String, dynamic>{'type': 'other', 'title': title, 'time': time});
     }
   }
   final result = <Map<String, dynamic>>[...groups.values, ...others];
