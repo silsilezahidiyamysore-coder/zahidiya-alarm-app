@@ -282,6 +282,11 @@ Future<void> main() async {
   }
 
   await AppLang.load();
+  try {
+    // Font ko pehle hi download/cache karke rakh do, taaki jab bhi user
+    // Urdu par switch kare, turant sahi (Nastaliq) font dikhe — koi flash/farak na aaye.
+    await GoogleFonts.pendingFonts([GoogleFonts.notoNastaliqUrdu()]);
+  } catch (e) {}
   runApp(const ZahidiyaAlarmApp());
 }
 
@@ -335,6 +340,27 @@ const Map<String, Map<String, String>> kStrings = {
 };
 
 String tr(String key) => kStrings[AppLang.current]?[key] ?? kStrings['en']![key] ?? key;
+
+// Backend (website) se aane wale Namaz reminder titles fixed pattern mein hote hain
+// (jaise "Fajr ki namaz ka waqt ho gaya hai"). Inko Urdu mode mein yahin app ke
+// andar translate kar dete hain, backend badle bina.
+const Map<String, String> _prayerNameUr = {
+  'Fajr': 'فجر', 'Dhuhr': 'ظہر', 'Asr': 'عصر', 'Maghrib': 'مغرب', 'Isha': 'عشاء',
+};
+
+String translateAlarmTitle(String title) {
+  if (AppLang.current != 'ur') return title;
+  for (final entry in _prayerNameUr.entries) {
+    if (title == '${entry.key} ki namaz ka waqt ho gaya hai') {
+      return '${entry.value} کی نماز کا وقت ہو گیا ہے';
+    }
+    if (title == '⏳ ${entry.key} ki namaz khatam hone wali hai') {
+      return '⏳ ${entry.value} کی نماز ختم ہونے والی ہے';
+    }
+  }
+  if (title == 'Alarm') return 'الارم';
+  return title; // custom event/alarm titles jo admin ne khud likhe, wo waise hi rahenge
+}
 
 // Website jaisa hi Nastaliq font — Urdu mode mein hamesha yehi use hoga,
 // chahe phone mein koi bhi Urdu font installed ho ya na ho.
@@ -458,7 +484,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       if (isRinging) {
         final title = alarmSet.alarms.first.notificationSettings.body;
         nav.push(MaterialPageRoute(
-          builder: (_) => AlarmRingingScreen(title: title.isNotEmpty ? title : 'Alarm'),
+          builder: (_) => AlarmRingingScreen(title: translateAlarmTitle(title.isNotEmpty ? title : 'Alarm')),
           fullscreenDialog: true,
         ));
       } else {
@@ -659,7 +685,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                   return Card(
                     child: ListTile(
                       leading: const Icon(Icons.alarm, color: Colors.green),
-                      title: Text(item['title'], style: appFont()),
+                      title: Text(translateAlarmTitle(item['title']), style: appFont()),
                       trailing: Text(_formatTime(item['time'] as DateTime), style: appFont()),
                     ),
                   );
