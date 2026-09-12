@@ -7,7 +7,7 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:workmanager/workmanager.dart';
-import 'package:android_alarm_manager_plus/android_alarm_manager_plus.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:path_provider/path_provider.dart';
 import 'dart:io';
 import 'package:firebase_core/firebase_core.dart';
@@ -75,9 +75,11 @@ Future<void> _scheduleStopAlarm(int alarmId, DateTime ringAt, int durationSecond
   );
 }
 
-// Backend se schedule laakar real alarms set karta hai.
-// Yeh function App ke andar (button dabane par) aur background
-// (Workmanager ke through, roz apne aap) — dono jagah use hota hai.
+// Ab yeh function seedha alarm set NAHI karta — sirf aaj ka schedule
+// dikhaane ke liye laata hai, aur ringtone ko offline-use ke liye cache
+// kar leta hai. Asli "ring" ab seedha server se FCM push aane par
+// triggerImmediateAlarm() se hota hai (WhatsApp jaisa reliable) — isliye
+// phone ko khud "jaag" kar time check karne ki zaroorat nahi rehti.
 Future<List<Map<String, dynamic>>> fetchAndScheduleForMobile(String mobile) async {
   await Alarm.init();
   final uri = Uri.parse('$scheduleUrlBase?mobile=$mobile');
@@ -94,36 +96,15 @@ Future<List<Map<String, dynamic>>> fetchAndScheduleForMobile(String mobile) asyn
 
   final List<dynamic> schedule = data['schedule'] ?? [];
   final String? toneUrl = data['tone_url'];
-  final int durationSeconds = data['start_alarm_duration_seconds'] ?? 60;
-  final String? localTonePath = await _getLocalTonePath(toneUrl);
+  await _getLocalTonePath(toneUrl); // ringtone offline ke liye cache kar lo
   final now = DateTime.now();
   final List<Map<String, dynamic>> shownItems = [];
 
   for (final item in schedule) {
-    final String id = item['id'];
     final String title = item['title'];
     final String dateTimeStr = item['dateTime'];
     final DateTime dt = DateTime.parse(dateTimeStr).toLocal();
-
     if (dt.isBefore(now)) continue;
-
-    final int alarmId = idFromString(id);
-    final alarmSettings = AlarmSettings(
-      id: alarmId,
-      dateTime: dt,
-      assetAudioPath: localTonePath,
-      loopAudio: true,
-      vibrate: true,
-      androidFullScreenIntent: true,
-      volumeSettings: VolumeSettings.fixed(volume: 1.0),
-      notificationSettings: NotificationSettings(
-        title: 'Silsila-e-Zahidiya Alarm',
-        body: title,
-        stopButton: 'Band Karo',
-      ),
-    );
-    await Alarm.set(alarmSettings: alarmSettings);
-    await _scheduleStopAlarm(alarmId, dt, durationSeconds);
     shownItems.add({'title': title, 'time': dt});
   }
 
@@ -142,14 +123,20 @@ Future<String?> _getCachedTonePathOnly() async {
   return null;
 }
 
-// FCM se push aane par turant loud alarm bajata hai (Live/Class shuru hone ka signal).
-Future<void> triggerImmediateAlarm(String title) async {
+// FCM push aate hi (server se, exact time par) yeh seedha loud alarm bajata hai.
+// wakelock isliye lagaya hai taaki background mein CPU turant so na jaaye
+// jab tak alarm set na ho jaaye — phone jaldi/pakka bajata hai.
+Future<void> triggerImmediateAlarm(String title, {int durationSeconds = 60}) async {
+  try {
+    await WakelockPlus.enable();
+  } catch (_) {}
   await Alarm.init();
+  final DateTime ringAt = DateTime.now().add(const Duration(seconds: 2));
   final int alarmId = idFromString('live_${DateTime.now().millisecondsSinceEpoch}');
   final localTonePath = await _getCachedTonePathOnly();
   final alarmSettings = AlarmSettings(
     id: alarmId,
-    dateTime: DateTime.now().add(const Duration(seconds: 2)),
+    dateTime: ringAt,
     assetAudioPath: localTonePath,
     loopAudio: true,
     vibrate: true,
@@ -157,17 +144,25 @@ Future<void> triggerImmediateAlarm(String title) async {
     volumeSettings: VolumeSettings.fixed(volume: 1.0),
     notificationSettings: NotificationSettings(
       title: 'Silsila-e-Zahidiya Alarm',
-      body: title,
+      body: translateAlarmTitle(title),
       stopButton: 'Band Karo',
     ),
   );
   await Alarm.set(alarmSettings: alarmSettings);
+  await _scheduleStopAlarm(alarmId, ringAt, durationSeconds);
+  try {
+    await WakelockPlus.disable();
+  } catch (_) {}
 }
 
 String _titleFromMessage(fcm.RemoteMessage message) {
   return message.notification?.title ??
       message.data['title'] ??
       'Live Shuru Ho Gaya';
+}
+
+int _durationFromMessage(fcm.RemoteMessage message) {
+  return int.tryParse(message.data['duration']?.toString() ?? '') ?? 60;
 }
 
 // FCM token ko backend ko bhejta hai taaki us mobile number se link ho jaaye.
@@ -198,50 +193,7 @@ Future<void> firebaseMessagingBackgroundHandler(fcm.RemoteMessage message) async
     } catch (e) {}
     return;
   }
-  await triggerImmediateAlarm(_titleFromMessage(message));
-}
-
-// Yeh function background isolate mein chalta hai, jab AndroidAlarmManager
-// roz khud-ba-khud is app ko "jagakar" naye alarms set karwata hai.
-// Raat ko fix time (1:00 AM) par sync chalane ke liye — Fajr se kaafi pehle.
-// AndroidAlarmManager (exact + wakeup) WorkManager se zyada bharosemand hai
-// kyunki ye Doze/battery-saver mode mein bhi guaranteed time par jaagta hai.
-DateTime _next1AM() {
-  final now = DateTime.now();
-  var target = DateTime(now.year, now.month, now.day, 1, 0);
-  if (!now.isBefore(target)) {
-    target = target.add(const Duration(days: 1));
-  }
-  return target;
-}
-
-const int nightlySyncAlarmId = 900001;
-
-Future<void> _scheduleNightlySync() async {
-  await AndroidAlarmManager.oneShotAt(
-    _next1AM(),
-    nightlySyncAlarmId,
-    _nightlySyncCallback,
-    exact: true,
-    wakeup: true,
-    rescheduleOnReboot: true,
-  );
-}
-
-@pragma('vm:entry-point')
-void _nightlySyncCallback() async {
-  WidgetsFlutterBinding.ensureInitialized();
-  try {
-    final prefs = await SharedPreferences.getInstance();
-    final mobile = prefs.getString('mobile');
-    if (mobile != null && mobile.isNotEmpty) {
-      await fetchAndScheduleForMobile(mobile);
-    }
-  } catch (e) {
-    // Background mein fail ho to bhi crash na ho, agli baar phir try hoga
-  }
-  // Agli raat 1 baje ke liye dobara khud ko schedule kar do
-  await _scheduleNightlySync();
+  await triggerImmediateAlarm(_titleFromMessage(message), durationSeconds: _durationFromMessage(message));
 }
 
 @pragma('vm:entry-point')
@@ -256,10 +208,9 @@ void callbackDispatcher() {
         }
       } catch (e) {}
     } else if (task == 'safetyResyncTask') {
-      // Har 15 minute mein ek "safety check" — agar kisi wajah se (phone restart,
-      // OEM battery-killer, waghera) exact alarms cancel ho gaye hon, to yahan se
-      // dobara schedule ho jaate hain. Ye AndroidAlarmManager ke sath ek extra
-      // backup hai, WorkManager reboot ke baad khud-ba-khud phir chalta hai.
+      // Har 15 minute mein display list + ringtone cache refresh karta hai
+      // (ab asli alarm ka time server FCM push se aata hai, ye sirf UI/tone
+      // taaza rakhne ke liye hai).
       try {
         final prefs = await SharedPreferences.getInstance();
         final mobile = prefs.getString('mobile');
@@ -278,20 +229,13 @@ Future<void> main() async {
   fcm.FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
 
   await Alarm.init();
-  try {
-    await AndroidAlarmManager.initialize();
-  } catch (e) {
-    // Fail ho to bhi app aage badhe, splash par atkna nahi chahiye
-  }
 
-  // stopAlarmTask (duration ke baad alarm band karna) ke liye Workmanager
-  // abhi bhi use hota hai — ye chhota/short-delay kaam hai.
+  // Ab roz raat 1 baje "jaagne" wala kaam nahi karna padta — server (backend)
+  // khud FCM push bhejta hai exact waqt par, app seedha triggerImmediateAlarm()
+  // se bajati hai. Isliye AndroidAlarmManager/WorkManager-based nightly sync
+  // hata diya hai. WorkManager sirf "stopAlarmTask" (duration ke baad band
+  // karna) aur ek chhota safety-refresh (display list + tone cache) ke liye reh gaya hai.
   await Workmanager().initialize(callbackDispatcher);
-  try {
-    await _scheduleNightlySync();
-  } catch (e) {
-    // Fail ho to bhi app aage badhe
-  }
   try {
     // Ye ek baar register hone ke baad hamesha chalta rahega (reboot ke baad bhi,
     // WorkManager khud-ba-khud phir se register kar leta hai) — koi extra kaam
@@ -596,7 +540,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         });
         return;
       }
-      triggerImmediateAlarm(_titleFromMessage(message));
+      triggerImmediateAlarm(_titleFromMessage(message), durationSeconds: _durationFromMessage(message));
     });
   }
 
