@@ -461,7 +461,25 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   final _mobileController = TextEditingController();
-  String _status = '';
+  String _statusKind = 'default';
+  int _statusCount = 0;
+  String _statusErrorDetail = '';
+
+  // _status ko seedha translated string ki jagah "kind" store karte hain,
+  // taake language toggle karne par purana (stale) translation na reh jaaye —
+  // build() ke waqt hamesha current language mein dobara translate hota hai.
+  String get _status {
+    switch (_statusKind) {
+      case 'empty_mobile': return tr('status_empty_mobile');
+      case 'not_registered': return tr('status_not_registered');
+      case 'verify_error': return tr('status_verify_error');
+      case 'fetching': return tr('status_fetching');
+      case 'no_alarms_left': return tr('status_no_alarms_left');
+      case 'success': return trSetSuccess(_statusCount);
+      case 'error': return tr('status_error_prefix') + _statusErrorDetail;
+      default: return tr('default_status');
+    }
+  }
   List<Map<String, dynamic>> _scheduledItems = [];
   bool _loading = false;
   String? _fcmToken;
@@ -470,7 +488,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   @override
   void initState() {
     super.initState();
-    _status = tr('default_status');
+    // _status ab getter hai (upar dekho), initState mein set karne ki zaroorat nahi
     WidgetsBinding.instance.addObserver(this);
     _requestPermissions();
     _loadSavedMobile();
@@ -562,7 +580,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     final mobile = _mobileController.text.trim();
     if (mobile.isEmpty) {
       setState(() {
-        _status = tr('status_empty_mobile');
+        _statusKind = 'empty_mobile';
       });
       return;
     }    final verifyUri = Uri.parse('https://zahidiya-mysore.pages.dev/api/verify-mobile?mobile=$mobile');
@@ -571,20 +589,20 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       final verifyData = jsonDecode(verifyRes.body);
       if (verifyData['registered'] != true) {
         setState(() {
-          _status = tr('status_not_registered');
+          _statusKind = 'not_registered';
         });
         return;
       }
     } catch (e) {
       setState(() {
-        _status = tr('status_verify_error');
+        _statusKind = 'verify_error';
       });
       return;
     }
 
     setState(() {
       _loading = true;
-      _status = tr('status_fetching');
+      _statusKind = 'fetching';
     });
 
     final prefs = await SharedPreferences.getInstance();
@@ -600,14 +618,18 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       setState(() {
         _loading = false;
         _scheduledItems = items;
-        _status = items.isNotEmpty
-            ? trSetSuccess(items.length)
-            : tr('status_no_alarms_left');
+        if (items.isNotEmpty) {
+          _statusKind = 'success';
+          _statusCount = items.length;
+        } else {
+          _statusKind = 'no_alarms_left';
+        }
       });
     } catch (e) {
       setState(() {
         _loading = false;
-        _status = tr('status_error_prefix') + '$e';
+        _statusKind = 'error';
+        _statusErrorDetail = '$e';
       });
     }
   }
