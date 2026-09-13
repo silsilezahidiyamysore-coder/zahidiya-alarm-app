@@ -20,16 +20,33 @@ const String saveFcmTokenUrl =
     'https://zahidiya-mysore.pages.dev/api/save-fcm-token';
 const String dailySyncTaskName = 'zahidiyaDailyAlarmSync';
 
-// Admin ka upload kiya hua common ringtone download karke phone mein save karta hai
+// "category" ke hisaab se alag file name/pref-key use karta hai, taaki
+// Namaz/Custom, Event aur Live Class ki alag-alag ringtone cache ho sakein.
+String _toneFileName(String category) {
+  switch (category) {
+    case 'event': return 'event_alarm_tone.mp3';
+    case 'live': return 'live_alarm_tone.mp3';
+    default: return 'custom_alarm_tone.mp3'; // 'namaz'/'custom' dono isi (default/global) tone se bajte hain
+  }
+}
+String _tonePrefKey(String category) {
+  switch (category) {
+    case 'event': return 'cached_tone_url_event';
+    case 'live': return 'cached_tone_url_live';
+    default: return 'cached_tone_url';
+  }
+}
+
+// Admin ka upload kiya hua ringtone download karke phone mein save karta hai
 // (taaki app band/FCM push ke waqt bhi bina internet ke bhi use ho sake).
 // Agar URL pehle jaisa hi hai to dobara download nahi karta.
-Future<String?> _getLocalTonePath(String? toneUrl) async {
+Future<String?> _getLocalTonePath(String? toneUrl, [String category = 'namaz']) async {
   if (toneUrl == null || toneUrl.isEmpty) return null;
   try {
     final dir = await getApplicationDocumentsDirectory();
-    final file = File('${dir.path}/custom_alarm_tone.mp3');
+    final file = File('${dir.path}/${_toneFileName(category)}');
     final prefs = await SharedPreferences.getInstance();
-    final savedUrl = prefs.getString('cached_tone_url');
+    final savedUrl = prefs.getString(_tonePrefKey(category));
 
     if (savedUrl == toneUrl && await file.exists()) {
       return file.path;
@@ -38,14 +55,14 @@ Future<String?> _getLocalTonePath(String? toneUrl) async {
     final response = await http.get(Uri.parse(toneUrl)).timeout(const Duration(seconds: 20));
     if (response.statusCode == 200) {
       await file.writeAsBytes(response.bodyBytes);
-      await prefs.setString('cached_tone_url', toneUrl);
+      await prefs.setString(_tonePrefKey(category), toneUrl);
       return file.path;
     }
   } catch (e) {
     // Download fail ho to purani cached file (agar ho) use kar lo
     try {
       final dir = await getApplicationDocumentsDirectory();
-      final file = File('${dir.path}/custom_alarm_tone.mp3');
+      final file = File('${dir.path}/${_toneFileName(category)}');
       if (await file.exists()) return file.path;
     } catch (_) {}
   }
@@ -96,7 +113,11 @@ Future<List<Map<String, dynamic>>> fetchAndScheduleForMobile(String mobile) asyn
 
   final List<dynamic> schedule = data['schedule'] ?? [];
   final String? toneUrl = data['tone_url'];
-  await _getLocalTonePath(toneUrl); // ringtone offline ke liye cache kar lo
+  final String? eventToneUrl = data['event_tone_url'];
+  final String? liveToneUrl = data['live_class_tone_url'];
+  await _getLocalTonePath(toneUrl); // default (namaz/custom) tone offline ke liye cache kar lo
+  await _getLocalTonePath(eventToneUrl, 'event'); // event ki alag tone
+  await _getLocalTonePath(liveToneUrl, 'live'); // live class ki alag tone
   final now = DateTime.now();
   final List<Map<String, dynamic>> shownItems = [];
 
@@ -114,11 +135,16 @@ Future<List<Map<String, dynamic>>> fetchAndScheduleForMobile(String mobile) asyn
 
 // Sirf pehle se cache mein saved tone file uthata hai — download nahi karta
 // (push aane ke waqt turant alarm bajna zaroori hai, download ka wait nahi karna).
-Future<String?> _getCachedTonePathOnly() async {
+// Agar us category ki alag tone upload nahi hui hai, to default (namaz/custom) tone use hoti hai.
+Future<String?> _getCachedTonePathOnly([String category = 'namaz']) async {
   try {
     final dir = await getApplicationDocumentsDirectory();
-    final file = File('${dir.path}/custom_alarm_tone.mp3');
+    final file = File('${dir.path}/${_toneFileName(category)}');
     if (await file.exists()) return file.path;
+    if (category != 'namaz') {
+      final defaultFile = File('${dir.path}/${_toneFileName('namaz')}');
+      if (await defaultFile.exists()) return defaultFile.path;
+    }
   } catch (_) {}
   return null;
 }
@@ -126,14 +152,14 @@ Future<String?> _getCachedTonePathOnly() async {
 // FCM push aate hi (server se, exact time par) yeh seedha loud alarm bajata hai.
 // wakelock isliye lagaya hai taaki background mein CPU turant so na jaaye
 // jab tak alarm set na ho jaaye — phone jaldi/pakka bajata hai.
-Future<void> triggerImmediateAlarm(String title, {int durationSeconds = 60}) async {
+Future<void> triggerImmediateAlarm(String title, {int durationSeconds = 60, String category = 'namaz'}) async {
   try {
     await WakelockPlus.enable();
   } catch (_) {}
   await Alarm.init();
   final DateTime ringAt = DateTime.now().add(const Duration(seconds: 2));
   final int alarmId = idFromString('live_${DateTime.now().millisecondsSinceEpoch}');
-  final localTonePath = await _getCachedTonePathOnly();
+  final localTonePath = await _getCachedTonePathOnly(category);
   final alarmSettings = AlarmSettings(
     id: alarmId,
     dateTime: ringAt,
@@ -165,6 +191,10 @@ int _durationFromMessage(fcm.RemoteMessage message) {
   return int.tryParse(message.data['duration']?.toString() ?? '') ?? 60;
 }
 
+String _categoryFromMessage(fcm.RemoteMessage message) {
+  return message.data['category']?.toString() ?? 'namaz';
+}
+
 // FCM token ko backend ko bhejta hai taaki us mobile number se link ho jaaye.
 Future<void> sendTokenToBackend(String mobile, String token) async {
   try {
@@ -193,7 +223,7 @@ Future<void> firebaseMessagingBackgroundHandler(fcm.RemoteMessage message) async
     } catch (e) {}
     return;
   }
-  await triggerImmediateAlarm(_titleFromMessage(message), durationSeconds: _durationFromMessage(message));
+  await triggerImmediateAlarm(_titleFromMessage(message), durationSeconds: _durationFromMessage(message), category: _categoryFromMessage(message));
 }
 
 @pragma('vm:entry-point')
@@ -566,7 +596,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         });
         return;
       }
-      triggerImmediateAlarm(_titleFromMessage(message), durationSeconds: _durationFromMessage(message));
+      triggerImmediateAlarm(_titleFromMessage(message), durationSeconds: _durationFromMessage(message), category: _categoryFromMessage(message));
     });
   }
 
