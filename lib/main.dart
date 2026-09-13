@@ -355,6 +355,14 @@ List<Map<String, dynamic>> _groupScheduledItems(List<Map<String, dynamic>> items
 }
 
 String translateAlarmTitle(String title) {
+  // Custom Event/Alarm title agar "English | اردو" format mein likha ho,
+  // to sahi language wala hissa dikhao (dono language mein).
+  if (title.contains('|')) {
+    final parts = title.split('|');
+    if (parts.length >= 2) {
+      return AppLang.current == 'ur' ? parts[1].trim() : parts[0].trim();
+    }
+  }
   if (AppLang.current != 'ur') return title;
   for (final entry in _prayerNameUr.entries) {
     if (title == '${entry.key} ki namaz ka waqt ho gaya hai') {
@@ -365,7 +373,7 @@ String translateAlarmTitle(String title) {
     }
   }
   if (title == 'Alarm') return 'الارم';
-  return title; // custom event/alarm titles jo admin ne khud likhe, wo waise hi rahenge
+  return title; // custom event/alarm titles jo admin ne khud likhe (bina pipe ke), wo waise hi rahenge
 }
 
 // Website jaisa hi Nastaliq font — Urdu mode mein hamesha yehi use hoga,
