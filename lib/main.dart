@@ -241,10 +241,25 @@ void callbackDispatcher() {
       // Har 15 minute mein display list + ringtone cache refresh karta hai
       // (ab asli alarm ka time server FCM push se aata hai, ye sirf UI/tone
       // taaza rakhne ke liye hai).
+      //
+      // BUG FIX: pehle yahan sirf schedule/tone refresh hota tha, FCM token
+      // dobara backend ko nahi bheja jaata tha. Agar Android/Google Play
+      // Services kabhi FCM token badal de (aksar hota hai jab app kai ghante/
+      // din tak khola na jaaye) aur user subah app na khole, to backend ke
+      // paas PURANA (mar chuka) token reh jaata tha — is wajah se us poore din
+      // koi bhi alarm push hi nahi pahुँchta tha, jab tak user khud app kholke
+      // dobara "Set Alarms" na dabata. Ab yahan bhi token check + resend karte
+      // hain, taaki app kabhi khola na jaaye tab bhi token hamesha taaza rahe.
       try {
         final prefs = await SharedPreferences.getInstance();
         final mobile = prefs.getString('mobile');
         if (mobile != null && mobile.isNotEmpty) {
+          try {
+            final token = await fcm.FirebaseMessaging.instance.getToken();
+            if (token != null) {
+              await sendTokenToBackend(mobile, token);
+            }
+          } catch (_) {}
           await fetchAndScheduleForMobile(mobile);
         }
       } catch (e) {}
@@ -257,6 +272,19 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp();
   fcm.FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
+
+  // FCM token kabhi-kabhi khud badal jaata hai (Android/Google Play Services
+  // ki taraf se) — jab bhi aisa ho, turant naya token backend ko bhej do,
+  // taaki purana (mar chuka) token backend mein reh na jaaye.
+  fcm.FirebaseMessaging.instance.onTokenRefresh.listen((newToken) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final mobile = prefs.getString('mobile');
+      if (mobile != null && mobile.isNotEmpty) {
+        await sendTokenToBackend(mobile, newToken);
+      }
+    } catch (_) {}
+  });
 
   await Alarm.init();
 
