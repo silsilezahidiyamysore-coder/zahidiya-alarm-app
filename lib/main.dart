@@ -26,13 +26,15 @@ String _toneFileName(String category) {
   switch (category) {
     case 'event': return 'event_alarm_tone.mp3';
     case 'live': return 'live_alarm_tone.mp3';
-    default: return 'custom_alarm_tone.mp3'; // 'namaz'/'custom' dono isi (default/global) tone se bajte hain
+    case 'custom': return 'custom_alarm_tone_dedicated.mp3';
+    default: return 'custom_alarm_tone.mp3'; // 'namaz' ka default/global tone
   }
 }
 String _tonePrefKey(String category) {
   switch (category) {
     case 'event': return 'cached_tone_url_event';
     case 'live': return 'cached_tone_url_live';
+    case 'custom': return 'cached_tone_url_custom';
     default: return 'cached_tone_url';
   }
 }
@@ -115,9 +117,11 @@ Future<List<Map<String, dynamic>>> fetchAndScheduleForMobile(String mobile) asyn
   final String? toneUrl = data['tone_url'];
   final String? eventToneUrl = data['event_tone_url'];
   final String? liveToneUrl = data['live_class_tone_url'];
-  await _getLocalTonePath(toneUrl); // default (namaz/custom) tone offline ke liye cache kar lo
+  final String? customToneUrl = data['custom_alarm_tone_url'];
+  await _getLocalTonePath(toneUrl); // default (namaz) tone offline ke liye cache kar lo
   await _getLocalTonePath(eventToneUrl, 'event'); // event ki alag tone
   await _getLocalTonePath(liveToneUrl, 'live'); // live class ki alag tone
+  await _getLocalTonePath(customToneUrl, 'custom'); // custom alarm ki alag tone
   final now = DateTime.now();
   final List<Map<String, dynamic>> shownItems = [];
 
