@@ -347,7 +347,7 @@ const Map<String, Map<String, String>> kStrings = {
     'status_no_alarms_left': 'No alarms left for today (all have passed).',
     'status_error_prefix': 'Internet or server issue: ',
     'lang_toggle': '🌐 اردو',
-    'prayer_start_label': 'Start', 'prayer_end_label': 'End',
+    'prayer_start_label': 'Start', 'prayer_end_label': 'End', 'active_now_label': '🟢 Now',
   },
   'ur': {
     'app_title': 'سلسلہ زاہدیہ الارم',
@@ -363,7 +363,7 @@ const Map<String, Map<String, String>> kStrings = {
     'status_no_alarms_left': 'آج کے باقی کوئی الارم نہیں بچا (سب گزر چکے)۔',
     'status_error_prefix': 'انٹرنیٹ یا سرور میں مسئلہ: ',
     'lang_toggle': '🌐 English',
-    'prayer_start_label': 'شروع', 'prayer_end_label': 'ختم',
+    'prayer_start_label': 'شروع', 'prayer_end_label': 'ختم', 'active_now_label': '🟢 ابھی',
   },
 };
 
@@ -426,7 +426,8 @@ String translateAlarmTitle(String title) {
     if (title == '${entry.key} ki namaz ka waqt ho gaya hai') {
       return '${entry.value} کی نماز کا وقت ہو گیا ہے';
     }
-    if (title == '⏳ ${entry.key} ki namaz khatam hone wali hai') {
+    if (title == '${entry.key} ki namaz khatam hone wali hai' ||
+        title == '⏳ ${entry.key} ki namaz khatam hone wali hai') {
       return '⏳ ${entry.value} کی نماز ختم ہونے والی ہے';
     }
   }
@@ -551,6 +552,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   String? _fcmToken;
   static const _screenChannel = MethodChannel('zahidiya.alarm/screen');
 
+  Timer? _highlightRefreshTimer;
+
   @override
   void initState() {
     super.initState();
@@ -559,6 +562,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     _requestPermissions();
     _loadSavedMobile();
     _setupFCM();
+    // Har minute UI ko refresh karte hain taaki "abhi kaunsi namaz chal rahi
+    // hai" wala gold border turant sahi waqt par update ho (na ki sirf
+    // dobara app kholne par).
+    _highlightRefreshTimer = Timer.periodic(const Duration(seconds: 60), (_) {
+      if (mounted) setState(() {});
+    });
     // Power button dabakar screen OFF/lock hote hi (native side se signal
     // aayega), baj raha alarm turant band kar do.
     _screenChannel.setMethodCallHandler((call) async {
@@ -586,6 +595,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _highlightRefreshTimer?.cancel();
     super.dispose();
   }
 
@@ -633,6 +643,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     final saved = prefs.getString('mobile');
     if (saved != null) {
       _mobileController.text = saved;
+      // Number pehle se saved hai — matlab pehli baar "Set Alarms" pehle
+      // ho chuka hai. Ab dobara app khulte hi (chahe naya APK update ho ya
+      // phone restart ho) yeh khud-b-khud dobara register/refresh ho jaata
+      // hai, taaki user ko kabhi bhi manually button dabana na pade.
+      _fetchAndScheduleAlarms();
     }
   }
 
@@ -789,7 +804,21 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                     if (g['type'] == 'prayer') {
                       final DateTime? start = g['start'] as DateTime?;
                       final DateTime? end = g['end'] as DateTime?;
+                      final now = DateTime.now();
+                      // Abhi konsi namaz "active" hai (start aur end ke beech) —
+                      // usko gold border se highlight karte hain, taaki sirf
+                      // app kholte hi pata chal jaaye ki abhi kaunsi namaz ka
+                      // waqt chal raha hai, kisi button dabane ki zaroorat nahi.
+                      final bool isActive = start != null && end != null &&
+                          now.isAfter(start) && now.isBefore(end);
                       return Card(
+                        shape: isActive
+                            ? RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(8),
+                                side: const BorderSide(color: Color(0xFFFFD700), width: 2.5),
+                              )
+                            : null,
+                        color: isActive ? const Color(0xFFFFFBEA) : null,
                         child: Padding(
                           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                           child: Column(
@@ -800,6 +829,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                                   const Icon(Icons.alarm, color: Colors.green),
                                   const SizedBox(width: 10),
                                   Text(prayerLabel(g['prayer'] as String), style: appFont(const TextStyle(fontWeight: FontWeight.bold, fontSize: 16))),
+                                  if (isActive) ...[
+                                    const SizedBox(width: 8),
+                                    Text(tr('active_now_label'), style: appFont(const TextStyle(color: Color(0xFFB8860B), fontWeight: FontWeight.bold, fontSize: 12))),
+                                  ],
                                 ],
                               ),
                               const Divider(height: 14),
