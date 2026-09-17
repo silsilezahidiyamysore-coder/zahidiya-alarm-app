@@ -413,9 +413,23 @@ List<Map<String, dynamic>> _groupScheduledItems(List<Map<String, dynamic>> items
     }
   }
   final result = <Map<String, dynamic>>[...groups.values, ...others];
+  // Namaz ke cards hamesha FIXED (asli) order mein dikhte hain — Fajr,
+  // Dhuhr, Asr, Maghrib, Isha — chahe unka start/end time kabhi
+  // aapas mein takra jaaye (jaise Fajr ka "start" nikal chuka ho aur sirf
+  // "end" bacha ho, jo agli namaz ke start ke barabar hota hai). Pehle
+  // sirf time se sort hota tha, jisse kabhi order galat (jaise Dhuhr,
+  // Fajr, Asr) dikh jaata tha.
+  const prayerOrder = ['Fajr', 'Dhuhr', 'Asr', 'Maghrib', 'Isha'];
   result.sort((a, b) {
-    final DateTime ta = a['type'] == 'prayer' ? (a['start'] ?? a['end']) as DateTime : a['time'] as DateTime;
-    final DateTime tb = b['type'] == 'prayer' ? (b['start'] ?? b['end']) as DateTime : b['time'] as DateTime;
+    if (a['type'] == 'prayer' && b['type'] == 'prayer') {
+      final ia = prayerOrder.indexOf(a['prayer'] as String);
+      final ib = prayerOrder.indexOf(b['prayer'] as String);
+      return ia.compareTo(ib);
+    }
+    if (a['type'] == 'prayer' && b['type'] != 'prayer') return -1;
+    if (a['type'] != 'prayer' && b['type'] == 'prayer') return 1;
+    final DateTime ta = a['time'] as DateTime;
+    final DateTime tb = b['time'] as DateTime;
     return ta.compareTo(tb);
   });
   return result;
