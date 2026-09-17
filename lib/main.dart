@@ -180,9 +180,13 @@ Future<void> triggerImmediateAlarm(String title, {int durationSeconds = 60, Stri
   );
   await Alarm.set(alarmSettings: alarmSettings);
   await _scheduleStopAlarm(alarmId, ringAt, durationSeconds);
-  try {
-    await WakelockPlus.disable();
-  } catch (_) {}
+  // BUG FIX: pehle yahan turant WakelockPlus.disable() ho jaata tha —
+  // is wajah se kabhi-kabhi phone ki screen 2-3 second mein hi wapas so
+  // jaati thi, aur app usko "user ne khud screen off/lock ki" samajh ke
+  // alarm galti se jaldi band kar deta tha (jabki set duration bahut
+  // zyada baaki hota tha). Ab wakelock tabhi chhodenge jab alarm SACH
+  // mein band ho — ya to user "Band Karo" dabaye, ya scheduled duration
+  // poora ho jaaye (dono jagah neeche WakelockPlus.disable() call hai).
 }
 
 String _titleFromMessage(fcm.RemoteMessage message) {
@@ -240,6 +244,7 @@ void callbackDispatcher() {
         if (id != null) {
           await Alarm.stop(id as int);
         }
+        try { await WakelockPlus.disable(); } catch (_) {}
       } catch (e) {}
     } else if (task == 'safetyResyncTask') {
       // Har 15 minute mein display list + ringtone cache refresh karta hai
@@ -418,7 +423,8 @@ List<Map<String, dynamic>> _groupScheduledItems(List<Map<String, dynamic>> items
 
 String translateAlarmTitle(String title) {
   // Custom Event/Alarm title agar "English | اردو" format mein likha ho,
-  // to sahi language wala hissa dikhao (dono language mein).
+  // to jo bhi language abhi selected hai (English/Urdu toggle), usi ke
+  // hisaab se sahi hissa dikhao.
   if (title.contains('|')) {
     final parts = title.split('|');
     if (parts.length >= 2) {
@@ -501,6 +507,7 @@ class AlarmRingingScreen extends StatelessWidget {
                   ElevatedButton(
                     onPressed: () async {
                       await Alarm.stopAll();
+                      try { await WakelockPlus.disable(); } catch (_) {}
                       if (navigatorKey.currentState?.canPop() ?? false) {
                         navigatorKey.currentState?.pop();
                       }
@@ -577,6 +584,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     _screenChannel.setMethodCallHandler((call) async {
       if (call.method == 'screenOff') {
         await Alarm.stopAll();
+        try { await WakelockPlus.disable(); } catch (_) {}
       }
     });
     // Alarm bajte hi apna bada "Band Karo" wala screen turant dikha do.
