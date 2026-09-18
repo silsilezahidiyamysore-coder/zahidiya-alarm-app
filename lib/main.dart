@@ -129,8 +129,18 @@ Future<List<Map<String, dynamic>>> fetchAndScheduleForMobile(String mobile) asyn
     final String title = item['title'];
     final String dateTimeStr = item['dateTime'];
     final DateTime dt = DateTime.parse(dateTimeStr).toLocal();
-    if (dt.isBefore(now)) continue;
-    shownItems.add({'title': title, 'time': dt});
+    // "khatam hone wali hai" (end reminder) items ke liye "realEndDateTime"
+    // asli namaz-khatam waqt hota hai (jab agli namaz shuru hoti hai) —
+    // isko "End" column mein dikhate hain. "dateTime" (dt) sirf yeh batata
+    // hai ki reminder alert kab bajni hai (X min pehle) — display ke liye
+    // nahi, isliye ab dono ko alag rakha hai.
+    DateTime? realEndDt;
+    if (item['realEndDateTime'] != null) {
+      realEndDt = DateTime.parse(item['realEndDateTime']).toLocal();
+    }
+    final DateTime relevantUntil = realEndDt ?? dt;
+    if (relevantUntil.isBefore(now)) continue;
+    shownItems.add({'title': title, 'time': dt, if (realEndDt != null) 'realEndTime': realEndDt});
   }
 
   shownItems.sort((a, b) => (a['time'] as DateTime).compareTo(b['time'] as DateTime));
@@ -407,7 +417,7 @@ List<Map<String, dynamic>> _groupScheduledItems(List<Map<String, dynamic>> items
     } else if (em != null) {
       final name = em.group(1)!;
       groups.putIfAbsent(name, () => <String, dynamic>{'type': 'prayer', 'prayer': name});
-      groups[name]!['end'] = time;
+      groups[name]!['end'] = (item['realEndTime'] as DateTime?) ?? time;
     } else {
       others.add(<String, dynamic>{'type': 'other', 'title': title, 'time': time});
     }
@@ -437,12 +447,12 @@ List<Map<String, dynamic>> _groupScheduledItems(List<Map<String, dynamic>> items
 
 String translateAlarmTitle(String title) {
   // Custom Event/Alarm title agar "English | اردو" format mein likha ho,
-  // to jo bhi language abhi selected hai (English/Urdu toggle), usi ke
-  // hisaab se sahi hissa dikhao.
+  // to dono hisse hamesha SAATH dikhao (simple, kisi language-toggle par
+  // depend nahi karta).
   if (title.contains('|')) {
     final parts = title.split('|');
     if (parts.length >= 2) {
-      return AppLang.current == 'ur' ? parts[1].trim() : parts[0].trim();
+      return '${parts[0].trim()} / ${parts[1].trim()}';
     }
   }
   if (AppLang.current != 'ur') return title;
