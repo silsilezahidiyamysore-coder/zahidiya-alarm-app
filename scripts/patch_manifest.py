@@ -18,6 +18,7 @@ permission_lines = [
     "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK",
     "android.permission.USE_EXACT_ALARM",
     "android.permission.SCHEDULE_EXACT_ALARM",
+    "android.permission.SYSTEM_ALERT_WINDOW",
 ]
 
 permissions_block = "\n"
@@ -32,6 +33,17 @@ if "RECEIVE_BOOT_COMPLETED" not in content:
 service_tag = '    <service android:name="com.gdelataillade.alarm.services.NotificationOnKillService" />\n'
 if "NotificationOnKillService" not in content:
     content = content.replace("</application>", service_tag + "</application>")
+
+# MainActivity ko lock-screen ke upar dikhne aur screen ON karne ki ijazat do
+# (alarm bajte waqt app poori screen par aaye, chahe phone locked ho).
+import re
+if "showWhenLocked" not in content:
+    content = re.sub(
+        r'(<activity\s+android:name="\.MainActivity")',
+        r'\1\n            android:showWhenLocked="true"\n            android:turnScreenOn="true"',
+        content,
+        count=1,
+    )
 
 with open(path, "w") as f:
     f.write(content)
