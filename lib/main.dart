@@ -482,12 +482,15 @@ List<Map<String, dynamic>> _groupScheduledItems(List<Map<String, dynamic>> items
 
 String translateAlarmTitle(String title) {
   // Custom Event/Alarm title agar "English | اردو" format mein likha ho,
-  // to dono hisse hamesha SAATH dikhao (simple, kisi language-toggle par
-  // depend nahi karta).
+  // to sirf usi language ka hissa dikhao jo app mein abhi chuni hui hai
+  // (English mode mein English, Urdu mode mein Urdu) — dono mix nahi hote.
   if (title.contains('|')) {
-    final parts = title.split('|');
+    final parts = title.split('|').map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
     if (parts.length >= 2) {
-      return '${parts[0].trim()} / ${parts[1].trim()}';
+      final hasUrdu = RegExp('[\u0600-\u06FF]');
+      final urdu = parts.firstWhere((p) => hasUrdu.hasMatch(p), orElse: () => parts[1]);
+      final english = parts.firstWhere((p) => !hasUrdu.hasMatch(p), orElse: () => parts[0]);
+      return AppLang.current == 'ur' ? urdu : english;
     }
   }
   if (AppLang.current != 'ur') return title;
