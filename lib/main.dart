@@ -13,6 +13,8 @@ import 'dart:io';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart' as fcm;
 import 'package:google_fonts/google_fonts.dart';
+import 'package:android_intent_plus/android_intent.dart';
+import 'package:android_intent_plus/flag.dart';
 
 const String scheduleUrlBase =
     'https://zahidiya-mysore.pages.dev/api/get-alarm-schedule';
@@ -69,6 +71,31 @@ Future<String?> _getLocalTonePath(String? toneUrl, [String category = 'namaz']) 
     } catch (_) {}
   }
   return null;
+}
+
+// Namaz ke "shuru" aur "khatam" alarm titles pehchanne ke liye (backend ke
+// fixed text se match hote hain). Emoji ho ya na ho, dono chalega.
+final RegExp _startTitleRe = RegExp(r'^(Fajr|Dhuhr|Asr|Maghrib|Isha) ki namaz ka waqt ho gaya hai$');
+final RegExp _endTitleRe = RegExp(r'^(?:⏳ )?(Fajr|Dhuhr|Asr|Maghrib|Isha) ki namaz khatam hone wali hai$');
+
+// Alarm bajte hi app ko sabse aage (full screen) le aata hai — chahe phone
+// unlock ho aur koi aur app chal rahi ho. Iske liye phone mein "Display over
+// other apps" ki ijazat zaroori hai (app pehli baar kholne par maangti hai).
+Future<void> _bringAppToFront() async {
+  try {
+    final intent = AndroidIntent(
+      action: 'android.intent.action.MAIN',
+      category: 'android.intent.category.LAUNCHER',
+      package: 'com.zahidiya.alarm',
+      componentName: 'com.zahidiya.alarm.MainActivity',
+      flags: <int>[
+        Flag.FLAG_ACTIVITY_NEW_TASK,
+        Flag.FLAG_ACTIVITY_REORDER_TO_FRONT,
+        Flag.FLAG_ACTIVITY_SINGLE_TOP,
+      ],
+    );
+    await intent.launch();
+  } catch (_) {}
 }
 
 int idFromString(String s) {
@@ -139,7 +166,11 @@ Future<List<Map<String, dynamic>>> fetchAndScheduleForMobile(String mobile) asyn
       realEndDt = DateTime.parse(item['realEndDateTime']).toLocal();
     }
     final DateTime relevantUntil = realEndDt ?? dt;
-    if (relevantUntil.isBefore(now)) continue;
+    // FIX: namaz ke Start/End poore din list mein rehte hain (admin panel jaisa),
+    // pehle Start time nikalte hi hat jaata tha (Fajr/Zohar mein '—' dikhta tha).
+    // Sirf Event/Custom alarm guzar jaane par hatte hain.
+    final bool isPrayerItem = _startTitleRe.hasMatch(title) || _endTitleRe.hasMatch(title);
+    if (relevantUntil.isBefore(now) && !isPrayerItem) continue;
     shownItems.add({'title': title, 'time': dt, if (realEndDt != null) 'realEndTime': realEndDt});
   }
 
@@ -190,6 +221,8 @@ Future<void> triggerImmediateAlarm(String title, {int durationSeconds = 60, Stri
   );
   await Alarm.set(alarmSettings: alarmSettings);
   await _scheduleStopAlarm(alarmId, ringAt, durationSeconds);
+  // Phone unlock/kisi aur app mein ho tab bhi alarm screen poori screen par aaye
+  await _bringAppToFront();
   // BUG FIX: pehle yahan turant WakelockPlus.disable() ho jaata tha —
   // is wajah se kabhi-kabhi phone ki screen 2-3 second mein hi wapas so
   // jaati thi, aur app usko "user ne khud screen off/lock ki" samajh ke
@@ -357,6 +390,7 @@ const Map<String, Map<String, String>> kStrings = {
     'mobile_label': 'Mobile Number',
     'set_alarms_btn': 'Set Alarms',
     'battery_btn': '🔋 Open Battery Settings (for alarm without interruption)',
+    'overlay_btn': '📱 Allow full-screen alarm (Display over other apps)',
     'band_karo_btn': '🛑 Stop',
     'default_status': 'Enter your mobile number and tap "Set Alarms".\n(After this they will set automatically every day.)',
     'status_empty_mobile': 'First enter your mobile number.',
@@ -373,6 +407,7 @@ const Map<String, Map<String, String>> kStrings = {
     'mobile_label': 'موبائل نمبر',
     'set_alarms_btn': 'الارمز سیٹ کریں',
     'battery_btn': '🔋 بیٹری سیٹنگز کھولیں (الارم بلا رکاوٹ بجنے کے لیے)',
+    'overlay_btn': '📱 فل اسکرین الارم کی اجازت دیں (دوسری ایپس کے اوپر دکھائیں)',
     'band_karo_btn': '🛑 بند کریں',
     'default_status': 'اپنا موبائل نمبر ڈال کر "الارمز سیٹ کریں" دبائیں۔\n(اس کے بعد روز خود بخود سیٹ ہوتے رہیں گے۔)',
     'status_empty_mobile': 'پہلے اپنا موبائل نمبر ڈالیں۔',
@@ -403,8 +438,8 @@ String prayerLabel(String name) => AppLang.current == 'ur' ? (_prayerNameUr[name
 List<Map<String, dynamic>> _groupScheduledItems(List<Map<String, dynamic>> items) {
   final Map<String, Map<String, dynamic>> groups = {};
   final List<Map<String, dynamic>> others = [];
-  final startRe = RegExp(r'^(Fajr|Dhuhr|Asr|Maghrib|Isha) ki namaz ka waqt ho gaya hai$');
-  final endRe = RegExp(r'^⏳ (Fajr|Dhuhr|Asr|Maghrib|Isha) ki namaz khatam hone wali hai$');
+  final startRe = _startTitleRe;
+  final endRe = _endTitleRe;
   for (final item in items) {
     final title = item['title'] as String;
     final time = item['time'] as DateTime;
@@ -479,6 +514,46 @@ TextStyle appFont([TextStyle? base]) {
   return b;
 }
 
+// Title mein Urdu aur English saath ho (jaise "Zanana Class / زنانہ کلاس") to
+// sirf Urdu wale hisse ko Nastaliq font dete hain, baaki English normal font
+// mein — chahe app abhi English mode mein ho ya Urdu mode mein.
+const String _urduChars = '\u0600-\u06FF\u0750-\u077F\uFB50-\uFDFF\uFE70-\uFEFF\u200C\u200D';
+final RegExp _urduRun = RegExp('[$_urduChars]+(?:\\s+[$_urduChars]+)*');
+
+TextSpan mixedTextSpan(String text, TextStyle base) {
+  final children = <InlineSpan>[];
+  int last = 0;
+  for (final m in _urduRun.allMatches(text)) {
+    if (m.start > last) {
+      children.add(TextSpan(text: text.substring(last, m.start)));
+    }
+    children.add(TextSpan(
+      text: m.group(0),
+      style: GoogleFonts.notoNastaliqUrdu(textStyle: base, height: 1.9),
+    ));
+    last = m.end;
+  }
+  if (last < text.length) {
+    children.add(TextSpan(text: text.substring(last)));
+  }
+  return TextSpan(style: base, children: children);
+}
+
+class MixedText extends StatelessWidget {
+  final String text;
+  final TextStyle? style;
+  final TextAlign? textAlign;
+  const MixedText(this.text, {super.key, this.style, this.textAlign});
+
+  @override
+  Widget build(BuildContext context) {
+    return Text.rich(
+      mixedTextSpan(text, style ?? const TextStyle()),
+      textAlign: textAlign,
+    );
+  }
+}
+
 String trSetSuccess(int count) => AppLang.current == 'ur'
     ? '$count الارم سیٹ ہو گئے۔ اب روز خود بخود سیٹ ہوتے رہیں گے۔'
     : '$count alarm(s) set. They will now set automatically every day.';
@@ -522,10 +597,10 @@ class AlarmRingingScreen extends StatelessWidget {
                 children: [
                   const Icon(Icons.alarm, color: Colors.white, size: 90),
                   const SizedBox(height: 24),
-                  Text(
+                  MixedText(
                     title,
                     textAlign: TextAlign.center,
-                    style: appFont(const TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold)),
+                    style: const TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold),
                   ),
                   const SizedBox(height: 60),
                   ElevatedButton(
@@ -588,6 +663,24 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   static const _screenChannel = MethodChannel('zahidiya.alarm/screen');
 
   Timer? _highlightRefreshTimer;
+  StreamSubscription<dynamic>? _ringingSub;
+  bool _ringingScreenOpen = false;
+
+  // Alarm wala bada "Band Karo" screen kholta hai (agar pehle se khula na ho).
+  void _openRingingScreen(String body) {
+    if (_ringingScreenOpen) return;
+    final nav = navigatorKey.currentState;
+    if (nav == null) return;
+    _ringingScreenOpen = true;
+    nav
+        .push(MaterialPageRoute(
+          builder: (_) => AlarmRingingScreen(title: translateAlarmTitle(body.isNotEmpty ? body : 'Alarm')),
+          fullscreenDialog: true,
+        ))
+        .then((_) {
+      _ringingScreenOpen = false;
+    });
+  }
 
   @override
   void initState() {
@@ -597,6 +690,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     _requestPermissions();
     _loadSavedMobile();
     _setupFCM();
+    // Agar app alarm bajte waqt hi khuli (jaise alarm ne khud app aage laayi),
+    // to pehle frame ke baad turant bada "Band Karo" screen dikhao.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final ringing = Alarm.ringing.value;
+      if (ringing.alarms.isNotEmpty) {
+        _openRingingScreen(ringing.alarms.first.notificationSettings.body);
+      }
+    });
     // Har minute UI ko refresh karte hain taaki "abhi kaunsi namaz chal rahi
     // hai" wala gold border turant sahi waqt par update ho (na ki sirf
     // dobara app kholne par).
@@ -612,18 +713,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       }
     });
     // Alarm bajte hi apna bada "Band Karo" wala screen turant dikha do.
-    Alarm.ringing.listen((alarmSet) {
-      final isRinging = alarmSet.alarms.isNotEmpty;
+    _ringingSub = Alarm.ringing.listen((alarmSet) {
       final nav = navigatorKey.currentState;
       if (nav == null) return;
-      if (isRinging) {
-        final title = alarmSet.alarms.first.notificationSettings.body;
-        nav.push(MaterialPageRoute(
-          builder: (_) => AlarmRingingScreen(title: translateAlarmTitle(title.isNotEmpty ? title : 'Alarm')),
-          fullscreenDialog: true,
-        ));
+      if (alarmSet.alarms.isNotEmpty) {
+        _openRingingScreen(alarmSet.alarms.first.notificationSettings.body);
       } else {
-        if (nav.canPop()) nav.pop();
+        if (_ringingScreenOpen && nav.canPop()) nav.pop();
       }
     });
   }
@@ -632,14 +728,20 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _highlightRefreshTimer?.cancel();
+    _ringingSub?.cancel();
     super.dispose();
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      // Screen ON / app foreground hote hi baj raha alarm band kar do
-      Alarm.stopAll();
+      // Pehle yahan alarm turant band ho jaata tha. Ab app khulte hi (ya
+      // alarm ke waqt khud aage aate hi) agar alarm baj raha hai to bada
+      // "Band Karo" screen dikhta hai — alarm sirf button dabane se band hoga.
+      final ringing = Alarm.ringing.value;
+      if (ringing.alarms.isNotEmpty) {
+        _openRingingScreen(ringing.alarms.first.notificationSettings.body);
+      }
     }
   }
 
@@ -691,6 +793,16 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     await Permission.notification.request();
     await Permission.scheduleExactAlarm.request();
     await Permission.ignoreBatteryOptimizations.request();
+    // "Display over other apps" — isi se alarm phone unlock hone par bhi
+    // full screen aa sakta hai. Sirf ek baar khud maangte hain.
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final asked = prefs.getBool('asked_overlay_permission') ?? false;
+      if (!asked && !await Permission.systemAlertWindow.isGranted) {
+        await prefs.setBool('asked_overlay_permission', true);
+        await Permission.systemAlertWindow.request();
+      }
+    } catch (_) {}
   }
 
   Future<void> _fetchAndScheduleAlarms() async {
@@ -823,6 +935,16 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               ),
               child: Text(tr('battery_btn'), style: appFont()),
             ),
+            const SizedBox(height: 10),
+            OutlinedButton(
+              onPressed: () async {
+                await Permission.systemAlertWindow.request();
+              },
+              style: OutlinedButton.styleFrom(
+                minimumSize: const Size(double.infinity, 44),
+              ),
+              child: Text(tr('overlay_btn'), style: appFont()),
+            ),
             const SizedBox(height: 16),
             Text(
               _status,
@@ -895,7 +1017,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                     return Card(
                       child: ListTile(
                         leading: const Icon(Icons.alarm, color: Colors.green),
-                        title: Text(translateAlarmTitle(g['title'] as String), style: appFont()),
+                        title: MixedText(translateAlarmTitle(g['title'] as String)),
                         trailing: Text(_formatTime(g['time'] as DateTime), style: appFont()),
                       ),
                     );
