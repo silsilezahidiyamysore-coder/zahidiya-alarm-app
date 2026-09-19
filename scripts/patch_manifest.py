@@ -34,6 +34,17 @@ service_tag = '    <service android:name="com.gdelataillade.alarm.services.Notif
 if "NotificationOnKillService" not in content:
     content = content.replace("</application>", service_tag + "</application>")
 
+# Alarm ke waqt kisi bhi app ke upar poori screen ka overlay dikhane wala receiver
+receiver_tag = (
+    '    <receiver android:name="com.zahidiya.alarm.AlarmOverlayReceiver" android:exported="false">\n'
+    '        <intent-filter>\n'
+    '            <action android:name="com.zahidiya.alarm.SHOW_OVERLAY" />\n'
+    '        </intent-filter>\n'
+    '    </receiver>\n'
+)
+if "AlarmOverlayReceiver" not in content:
+    content = content.replace("</application>", receiver_tag + "</application>")
+
 # MainActivity ko lock-screen ke upar dikhne aur screen ON karne ki ijazat do
 # (alarm bajte waqt app poori screen par aaye, chahe phone locked ho).
 import re
