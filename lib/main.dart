@@ -477,6 +477,13 @@ List<Map<String, dynamic>> _groupScheduledItems(List<Map<String, dynamic>> items
     final DateTime tb = b['time'] as DateTime;
     return ta.compareTo(tb);
   });
+  // Jis namaz ka "End" waqt guzar chuka hai (jaise Asr mein Fajr aur Zuhr),
+  // use list se hata do — sirf abhi chal rahi aur aane wali namaz dikhe.
+  final nowT = DateTime.now();
+  result.removeWhere((g) =>
+      g['type'] == 'prayer' &&
+      g['end'] != null &&
+      (g['end'] as DateTime).isBefore(nowT));
   return result;
 }
 
@@ -666,6 +673,28 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   static const _screenChannel = MethodChannel('zahidiya.alarm/screen');
 
   Timer? _highlightRefreshTimer;
+  DateTime _lastFetched = DateTime.now();
+
+  // Chup-chaap (bina status badle) naya schedule le aata hai — taaki agli
+  // subah Fajr se list phir shuru ho jaaye, app dobara khole bina.
+  Future<void> _silentRefresh() async {
+    if (_loading) return;
+    _lastFetched = DateTime.now();
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final mobile = prefs.getString('mobile');
+      if (mobile == null || mobile.isEmpty) return;
+      final items = await fetchAndScheduleForMobile(mobile);
+      if (!mounted) return;
+      setState(() {
+        _scheduledItems = items;
+        if (items.isNotEmpty) {
+          _statusKind = 'success';
+          _statusCount = items.length;
+        }
+      });
+    } catch (_) {}
+  }
   StreamSubscription<dynamic>? _ringingSub;
   bool _ringingScreenOpen = false;
 
@@ -705,7 +734,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     // hai" wala gold border turant sahi waqt par update ho (na ki sirf
     // dobara app kholne par).
     _highlightRefreshTimer = Timer.periodic(const Duration(seconds: 60), (_) {
-      if (mounted) setState(() {});
+      if (!mounted) return;
+      setState(() {});
+      // Saari namaz guzar jaayein (Isha bhi khatam) to naya din ka schedule le aao
+      final hasPrayerLeft = _groupScheduledItems(_scheduledItems).any((g) => g['type'] == 'prayer');
+      if (!hasPrayerLeft && DateTime.now().difference(_lastFetched) > const Duration(minutes: 10)) {
+        _silentRefresh();
+      }
     });
     // Power button dabakar screen OFF/lock hote hi (native side se signal
     // aayega), baj raha alarm turant band kar do.
@@ -744,6 +779,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       final ringing = Alarm.ringing.value;
       if (ringing.alarms.isNotEmpty) {
         _openRingingScreen(ringing.alarms.first.notificationSettings.body);
+      }
+      // Kaafi der baad app khuli to list purani ho sakti hai — naya le aao
+      if (DateTime.now().difference(_lastFetched) > const Duration(minutes: 10)) {
+        _silentRefresh();
       }
     }
   }
@@ -847,6 +886,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
     try {
       final items = await fetchAndScheduleForMobile(mobile);
+      _lastFetched = DateTime.now();
       setState(() {
         _loading = false;
         _scheduledItems = items;
