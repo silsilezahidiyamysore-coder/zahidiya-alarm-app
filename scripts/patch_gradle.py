@@ -10,8 +10,8 @@ for path in targets:
     is_kts = path.endswith(".kts")
 
     if is_kts:
-        content = re.sub(r"minSdk\s*=\s*flutter\.minSdkVersion", "minSdk = 23", content)
-        content = re.sub(r"minSdkVersion\s*=\s*flutter\.minSdkVersion", "minSdkVersion = 23", content)
+        content = re.sub(r"minSdk\s*=\s*flutter\.minSdkVersion", "minSdk = 24", content)
+        content = re.sub(r"minSdkVersion\s*=\s*flutter\.minSdkVersion", "minSdkVersion = 24", content)
         if "multiDexEnabled" not in content:
             content = content.replace(
                 "defaultConfig {",
@@ -19,7 +19,7 @@ for path in targets:
                 1,
             )
     else:
-        content = re.sub(r"minSdkVersion\s+flutter\.minSdkVersion", "minSdkVersion 23", content)
+        content = re.sub(r"minSdkVersion\s+flutter\.minSdkVersion", "minSdkVersion 24", content)
         if "multiDexEnabled" not in content:
             content = content.replace(
                 "defaultConfig {",
