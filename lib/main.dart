@@ -15,6 +15,7 @@ import 'package:firebase_messaging/firebase_messaging.dart' as fcm;
 import 'package:google_fonts/google_fonts.dart';
 import 'package:android_intent_plus/android_intent.dart';
 import 'package:android_intent_plus/flag.dart';
+import 'package:webview_flutter/webview_flutter.dart';
 
 const String scheduleUrlBase =
     'https://zahidiya-mysore.pages.dev/api/get-alarm-schedule';
@@ -98,6 +99,20 @@ Future<void> _bringAppToFront() async {
   } catch (_) {}
 }
 
+// Alarm bajte hi kisi bhi app (YouTube/Facebook...) ke UPAR poori screen ka
+// alarm dikhata hai (native overlay, "Display over other apps" ki ijazat se)
+// aur alarm app ko bhi aage le aata hai.
+Future<void> _showAlarmOverlay(String title, int seconds) async {
+  try {
+    final intent = AndroidIntent(
+      action: 'com.zahidiya.alarm.SHOW_OVERLAY',
+      package: 'com.zahidiya.alarm',
+      arguments: <String, dynamic>{'title': title, 'seconds': seconds},
+    );
+    await intent.sendBroadcast();
+  } catch (_) {}
+}
+
 int idFromString(String s) {
   int hash = 0;
   for (final unit in s.codeUnits) {
@@ -171,7 +186,15 @@ Future<List<Map<String, dynamic>>> fetchAndScheduleForMobile(String mobile) asyn
     // Sirf Event/Custom alarm guzar jaane par hatte hain.
     final bool isPrayerItem = _startTitleRe.hasMatch(title) || _endTitleRe.hasMatch(title);
     if (relevantUntil.isBefore(now) && !isPrayerItem) continue;
-    shownItems.add({'title': title, 'time': dt, if (realEndDt != null) 'realEndTime': realEndDt});
+    shownItems.add({
+      'title': title,
+      'time': dt,
+      if (realEndDt != null) 'realEndTime': realEndDt,
+      // Event ka text/file (agar hai) — list se tap karke app ke andar dikhane ke liye
+      if (item['contentType'] != null) 'contentType': item['contentType'],
+      if (item['contentText'] != null) 'contentText': item['contentText'],
+      if (item['fileUrl'] != null) 'fileUrl': item['fileUrl'],
+    });
   }
 
   shownItems.sort((a, b) => (a['time'] as DateTime).compareTo(b['time'] as DateTime));
@@ -197,7 +220,7 @@ Future<String?> _getCachedTonePathOnly([String category = 'namaz']) async {
 // FCM push aate hi (server se, exact time par) yeh seedha loud alarm bajata hai.
 // wakelock isliye lagaya hai taaki background mein CPU turant so na jaaye
 // jab tak alarm set na ho jaaye — phone jaldi/pakka bajata hai.
-Future<void> triggerImmediateAlarm(String title, {int durationSeconds = 60, String category = 'namaz'}) async {
+Future<void> triggerImmediateAlarm(String title, {int durationSeconds = 60, String category = 'namaz', bool showOverlay = true}) async {
   try {
     await WakelockPlus.enable();
   } catch (_) {}
@@ -222,6 +245,8 @@ Future<void> triggerImmediateAlarm(String title, {int durationSeconds = 60, Stri
   await Alarm.set(alarmSettings: alarmSettings);
   await _scheduleStopAlarm(alarmId, ringAt, durationSeconds);
   // Phone unlock/kisi aur app mein ho tab bhi alarm screen poori screen par aaye
+  // Pehle overlay (kisi bhi app ke upar), phir app bhi aage — dono ek saath
+  if (showOverlay) await _showAlarmOverlay(translateAlarmTitle(title), durationSeconds);
   await _bringAppToFront();
   // BUG FIX: pehle yahan turant WakelockPlus.disable() ho jaata tha —
   // is wajah se kabhi-kabhi phone ki screen 2-3 second mein hi wapas so
@@ -391,6 +416,8 @@ const Map<String, Map<String, String>> kStrings = {
     'set_alarms_btn': 'Set Alarms',
     'battery_btn': '🔋 Open Battery Settings (for alarm without interruption)',
     'overlay_btn': '📱 Allow full-screen alarm (Display over other apps)',
+    'event_view_hint': 'Tap to view',
+    'no_event_content': 'Nothing to show for this event.',
     'band_karo_btn': '🛑 Stop',
     'default_status': 'Enter your mobile number and tap "Set Alarms".\n(After this they will set automatically every day.)',
     'status_empty_mobile': 'First enter your mobile number.',
@@ -408,6 +435,8 @@ const Map<String, Map<String, String>> kStrings = {
     'set_alarms_btn': 'الارمز سیٹ کریں',
     'battery_btn': '🔋 بیٹری سیٹنگز کھولیں (الارم بلا رکاوٹ بجنے کے لیے)',
     'overlay_btn': '📱 فل اسکرین الارم کی اجازت دیں (دوسری ایپس کے اوپر دکھائیں)',
+    'event_view_hint': 'دیکھنے کے لیے ٹچ کریں',
+    'no_event_content': 'اس ایونٹ کے لیے کچھ نہیں ہے۔',
     'band_karo_btn': '🛑 بند کریں',
     'default_status': 'اپنا موبائل نمبر ڈال کر "الارمز سیٹ کریں" دبائیں۔\n(اس کے بعد روز خود بخود سیٹ ہوتے رہیں گے۔)',
     'status_empty_mobile': 'پہلے اپنا موبائل نمبر ڈالیں۔',
@@ -454,7 +483,15 @@ List<Map<String, dynamic>> _groupScheduledItems(List<Map<String, dynamic>> items
       groups.putIfAbsent(name, () => <String, dynamic>{'type': 'prayer', 'prayer': name});
       groups[name]!['end'] = (item['realEndTime'] as DateTime?) ?? time;
     } else {
-      others.add(<String, dynamic>{'type': 'other', 'title': title, 'time': time});
+      others.add(<String, dynamic>{
+        'type': 'other',
+        'title': title,
+        'time': time,
+        'end': item['realEndTime'],
+        'contentType': item['contentType'],
+        'contentText': item['contentText'],
+        'fileUrl': item['fileUrl'],
+      });
     }
   }
   final result = <Map<String, dynamic>>[...groups.values, ...others];
@@ -482,6 +519,11 @@ List<Map<String, dynamic>> _groupScheduledItems(List<Map<String, dynamic>> items
   final nowT = DateTime.now();
   result.removeWhere((g) =>
       g['type'] == 'prayer' &&
+      g['end'] != null &&
+      (g['end'] as DateTime).isBefore(nowT));
+  // Event khatam ho jaaye to wo bhi list se hat jaaye
+  result.removeWhere((g) =>
+      g['type'] == 'other' &&
       g['end'] != null &&
       (g['end'] as DateTime).isBefore(nowT));
   return result;
@@ -588,6 +630,109 @@ class ZahidiyaAlarmApp extends StatelessWidget {
 
 // Alarm bajte hi yeh bada, saaf screen dikhta hai — "Band Karo" button
 // hamesha turant nazar aayega, chhota/chhupa hua nahi.
+// Event ka text ("English \n[[UR]]\n اردو" format mein save hota hai) — sirf
+// app ki chuni hui language ka hissa dikhao.
+const String _urTextMark = '\n[[UR]]\n';
+String eventTextForLang(String raw) {
+  final i = raw.indexOf(_urTextMark);
+  if (i < 0) return raw.trim();
+  final en = raw.substring(0, i).trim();
+  final ur = raw.substring(i + _urTextMark.length).trim();
+  if (ur.isEmpty) return en;
+  if (en.isEmpty) return ur;
+  return AppLang.current == 'ur' ? ur : en;
+}
+
+// Event ka text / image / audio / PDF alarm app ke andar hi dikhata hai.
+class EventContentScreen extends StatefulWidget {
+  final String title;
+  final String contentType;
+  final String contentText;
+  final String fileUrl;
+  const EventContentScreen({
+    super.key,
+    required this.title,
+    required this.contentType,
+    required this.contentText,
+    required this.fileUrl,
+  });
+
+  @override
+  State<EventContentScreen> createState() => _EventContentScreenState();
+}
+
+class _EventContentScreenState extends State<EventContentScreen> {
+  WebViewController? _web;
+
+  String get _url {
+    final u = widget.fileUrl;
+    return u.startsWith('/') ? 'https://zahidiya-mysore.pages.dev$u' : u;
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.fileUrl.isEmpty) return;
+    if (widget.contentType == 'pdf') {
+      // PDF ko Google ke viewer se app ke andar hi dikhate hain
+      _web = WebViewController()
+        ..setJavaScriptMode(JavaScriptMode.unrestricted)
+        ..loadRequest(Uri.parse('https://docs.google.com/gview?embedded=true&url=${Uri.encodeComponent(_url)}'));
+    } else if (widget.contentType == 'audio') {
+      final safe = _url.replaceAll('"', '%22');
+      _web = WebViewController()
+        ..setJavaScriptMode(JavaScriptMode.unrestricted)
+        ..setBackgroundColor(const Color(0xFF0F2A0F))
+        ..loadHtmlString(
+          '<html><head><meta name="viewport" content="width=device-width, initial-scale=1"></head>'
+          '<body style="margin:0;background:#0f2a0f;display:flex;align-items:center;justify-content:center;height:100vh;">'
+          '<audio controls style="width:92%" src="$safe"></audio></body></html>',
+        );
+    }
+  }
+
+  Widget _body() {
+    final type = widget.contentType;
+    if (type == 'text') {
+      final txt = eventTextForLang(widget.contentText);
+      return SingleChildScrollView(
+        padding: const EdgeInsets.all(16),
+        child: MixedText(
+          txt.isEmpty ? tr('no_event_content') : txt,
+          style: const TextStyle(fontSize: 18, height: 1.6),
+        ),
+      );
+    }
+    if (type == 'image' && widget.fileUrl.isNotEmpty) {
+      return InteractiveViewer(
+        child: Center(
+          child: Image.network(
+            _url,
+            loadingBuilder: (context, child, progress) =>
+                progress == null ? child : const Center(child: CircularProgressIndicator()),
+            errorBuilder: (context, error, stack) =>
+                Center(child: Text(tr('no_event_content'), style: appFont())),
+          ),
+        ),
+      );
+    }
+    if (_web != null) return WebViewWidget(controller: _web!);
+    return Center(child: Text(tr('no_event_content'), style: appFont()));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: MixedText(widget.title, style: const TextStyle(color: Colors.white, fontSize: 18)),
+        backgroundColor: Colors.green,
+        iconTheme: const IconThemeData(color: Colors.white),
+      ),
+      body: _body(),
+    );
+  }
+}
+
 class AlarmRingingScreen extends StatelessWidget {
   final String title;
   const AlarmRingingScreen({super.key, required this.title});
@@ -814,7 +959,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         });
         return;
       }
-      triggerImmediateAlarm(_titleFromMessage(message), durationSeconds: _durationFromMessage(message), category: _categoryFromMessage(message));
+      // App pehle se khuli hai, isliye overlay ki zaroorat nahi
+      triggerImmediateAlarm(_titleFromMessage(message), durationSeconds: _durationFromMessage(message), category: _categoryFromMessage(message), showOverlay: false);
     });
   }
 
@@ -1057,11 +1203,31 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                         ),
                       );
                     }
+                    final String cType = (g['contentType'] ?? 'none').toString();
+                    final String cText = (g['contentText'] ?? '').toString();
+                    final String cUrl = (g['fileUrl'] ?? '').toString();
+                    final bool hasContent = (cType == 'text' && cText.trim().isNotEmpty) ||
+                        (cType != 'text' && cType != 'none' && cUrl.isNotEmpty);
                     return Card(
                       child: ListTile(
-                        leading: const Icon(Icons.alarm, color: Colors.green),
+                        leading: Icon(hasContent ? Icons.attach_file : Icons.alarm, color: Colors.green),
                         title: MixedText(translateAlarmTitle(g['title'] as String)),
+                        subtitle: hasContent
+                            ? Text(tr('event_view_hint'), style: appFont(const TextStyle(fontSize: 12, color: Colors.green)))
+                            : null,
                         trailing: Text(_formatTime(g['time'] as DateTime), style: appFont()),
+                        onTap: hasContent
+                            ? () {
+                                Navigator.of(context).push(MaterialPageRoute(
+                                  builder: (_) => EventContentScreen(
+                                    title: translateAlarmTitle(g['title'] as String),
+                                    contentType: cType,
+                                    contentText: cText,
+                                    fileUrl: cUrl,
+                                  ),
+                                ));
+                              }
+                            : null,
                       ),
                     );
                   },
