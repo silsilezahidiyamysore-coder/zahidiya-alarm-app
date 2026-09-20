@@ -171,17 +171,21 @@ Future<List<Map<String, dynamic>>> fetchAndScheduleForMobile(String mobile, {boo
   // kabhi miss ya late nahi hoga). Push ab sirf backup hai.
   try {
     List<dynamic> tomorrowSchedule = [];
+    List<dynamic> tomorrowExtra = [];
     try {
       final t = DateTime.now().add(const Duration(days: 1));
       final dStr = '${t.year}-${t.month.toString().padLeft(2, '0')}-${t.day.toString().padLeft(2, '0')}';
       final r2 = await http.get(Uri.parse('$scheduleUrlBase?mobile=$mobile&date=$dStr')).timeout(const Duration(seconds: 25));
       if (r2.statusCode == 200) {
         final d2 = jsonDecode(r2.body);
-        if (d2['success'] == true) tomorrowSchedule = d2['schedule'] ?? [];
+        if (d2['success'] == true) {
+          tomorrowSchedule = d2['schedule'] ?? [];
+          tomorrowExtra = d2['extra_alarms'] ?? [];
+        }
       }
     } catch (_) {}
     await _scheduleLocalAlarms(
-      [...schedule, ...tomorrowSchedule],
+      [...schedule, ...((data['extra_alarms'] as List?) ?? []), ...tomorrowSchedule, ...tomorrowExtra],
       startDuration: (data['start_alarm_duration_seconds'] as num?)?.toInt() ?? 60,
       endDuration: (data['end_reminder_beep_seconds'] as num?)?.toInt() ?? 20,
       endMinutesBefore: (data['end_reminder_minutes_before'] as num?)?.toInt() ?? 0,
@@ -242,6 +246,24 @@ Future<String?> _getCachedTonePathOnly([String category = 'namaz']) async {
   return null;
 }
 
+// Sirf jo alarm abhi baj raha hai (ya jiska time aa chuka hai) use band karta hai.
+// PEHLE Alarm.stopAll() chalta tha, jo aane wale SAARE alarm bhi cancel kar deta
+// tha (ek alarm band karte hi baaki din ke alarm gayab ho jaate the).
+Future<void> _stopRingingOnly() async {
+  try {
+    final now = DateTime.now();
+    final all = await Alarm.getAlarms();
+    for (final a in all) {
+      if (!a.dateTime.isAfter(now) || await Alarm.isRinging(a.id)) {
+        await Alarm.stop(a.id);
+      }
+    }
+  } catch (_) {
+    // Kuch bhi gadbad ho to bhi alarm band hona sabse zaroori hai
+    try { await Alarm.stopAll(); } catch (_) {}
+  }
+}
+
 // ---------- PHONE PAR EXACT-TIME ALARM (asli, bharosemand tareeka) ----------
 const String _kLocalAlarmRecords = 'local_alarm_records_v1';
 
@@ -280,6 +302,12 @@ Future<void> _scheduleLocalAlarms(
         category = 'event';
       } else if (type == 'custom_alarm') {
         category = 'custom';
+      } else if (type == 'event_end') {
+        category = 'event';
+        duration = endDuration;
+      } else if (type == 'custom_alarm_end') {
+        category = 'custom';
+        duration = endDuration;
       }
       // Guzar chuka (ya bilkul abhi) ho to chhod do; 2 din se door bhi nahi
       if (!at.isAfter(now.add(const Duration(seconds: 20)))) continue;
@@ -332,29 +360,26 @@ Future<void> _scheduleLocalAlarms(
   await prefs.setString(_kLocalAlarmRecords, jsonEncode(newRecords));
 }
 
-// Server ka push aane par: agar isi alarm ko phone ne khud (exact time par)
-// baja diya hai ya baja raha hai, to dobara mat bajao. Agar phone wala alarm
-// fail hua (time nikal gaya par abhi bhi "pending" hai), to push se bajao.
+// Server ka push aane par: agar phone ne yehi alarm apne andar (exact time par)
+// pehle se lagaya hua hai, to push se dobara NAHI bajana (warna 1-2 minute baad
+// doosri baar bajta tha, kyunki server ka push hamesha thoda late aata hai).
+// Push tabhi bajta hai jab phone ke paas is alarm ka apna record hi na ho
+// (jaise phone ne schedule abhi tak liya hi na ho) — yaani sirf backup ke roop mein.
 Future<bool> _localAlarmAlreadyHandled(String title) async {
   try {
     final prefs = await SharedPreferences.getInstance();
     await prefs.reload(); // doosre isolate (app/WorkManager) ka likha hua bhi dikhe
     final json = prefs.getString(_kLocalAlarmRecords);
     if (json == null) return false;
-    await Alarm.init();
     final now = DateTime.now();
     final String wanted = _normTitle(title);
     for (final r in (jsonDecode(json) as List)) {
       if (r['title'] != wanted) continue;
       final at = DateTime.fromMillisecondsSinceEpoch(r['at'] as int);
       final diff = now.difference(at); // + matlab alarm ka time guzar chuka
-      if (diff < const Duration(seconds: -120) || diff > const Duration(minutes: 5)) continue;
-      final int id = r['id'] as int;
-      final still = await Alarm.getAlarm(id);
-      if (still == null) return true; // baj chuka aur band ho chuka
-      if (await Alarm.isRinging(id)) return true; // abhi baj raha hai
-      if (diff < const Duration(seconds: 30)) return true; // bas bajne hi wala hai
-      return false; // time nikal gaya par baja nahi — push se bajao
+      if (diff >= const Duration(seconds: -120) && diff <= const Duration(minutes: 5)) {
+        return true;
+      }
     }
   } catch (_) {}
   return false;
@@ -905,7 +930,7 @@ class AlarmRingingScreen extends StatelessWidget {
                   const SizedBox(height: 60),
                   ElevatedButton(
                     onPressed: () async {
-                      await Alarm.stopAll();
+                      await _stopRingingOnly();
                       try { await WakelockPlus.disable(); } catch (_) {}
                       if (navigatorKey.currentState?.canPop() ?? false) {
                         navigatorKey.currentState?.pop();
@@ -1036,7 +1061,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     // aayega), baj raha alarm turant band kar do.
     _screenChannel.setMethodCallHandler((call) async {
       if (call.method == 'screenOff') {
-        await Alarm.stopAll();
+        await _stopRingingOnly();
         try { await WakelockPlus.disable(); } catch (_) {}
       }
     });
