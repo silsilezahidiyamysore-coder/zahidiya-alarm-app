@@ -82,6 +82,7 @@ final RegExp _endTitleRe = RegExp(r'^(?:⏳ )?(Fajr|Dhuhr|Asr|Maghrib|Isha) ki n
 // Alarm bajte hi app ko sabse aage (full screen) le aata hai — chahe phone
 // unlock ho aur koi aur app chal rahi ho. Iske liye phone mein "Display over
 // other apps" ki ijazat zaroori hai (app pehli baar kholne par maangti hai).
+// ignore: unused_element
 Future<void> _bringAppToFront() async {
   try {
     final intent = AndroidIntent(
@@ -102,6 +103,7 @@ Future<void> _bringAppToFront() async {
 // Alarm bajte hi kisi bhi app (YouTube/Facebook...) ke UPAR poori screen ka
 // alarm dikhata hai (native overlay, "Display over other apps" ki ijazat se)
 // aur alarm app ko bhi aage le aata hai.
+// ignore: unused_element
 Future<void> _showAlarmOverlay(String title, int seconds) async {
   try {
     final intent = AndroidIntent(
@@ -244,10 +246,10 @@ Future<void> triggerImmediateAlarm(String title, {int durationSeconds = 60, Stri
   );
   await Alarm.set(alarmSettings: alarmSettings);
   await _scheduleStopAlarm(alarmId, ringAt, durationSeconds);
-  // Phone unlock/kisi aur app mein ho tab bhi alarm screen poori screen par aaye
-  // Pehle overlay (kisi bhi app ke upar), phir app bhi aage — dono ek saath
-  if (showOverlay) await _showAlarmOverlay(translateAlarmTitle(title), durationSeconds);
-  await _bringAppToFront();
+  // NOTE: alarm bajne ka raasta ab bilkul saada rakha hai (sirf Alarm.set).
+  // "Kisi bhi app ke upar full screen" wale extra kaam (_showAlarmOverlay /
+  // _bringAppToFront) yahan se hata diye hain, taaki wo alarm ki ringing mein
+  // kabhi rukawat na bana sakein. Wo alag se, alarm ko chhue bina, baad mein.
   // BUG FIX: pehle yahan turant WakelockPlus.disable() ho jaata tha —
   // is wajah se kabhi-kabhi phone ki screen 2-3 second mein hi wapas so
   // jaati thi, aur app usko "user ne khud screen off/lock ki" samajh ke
