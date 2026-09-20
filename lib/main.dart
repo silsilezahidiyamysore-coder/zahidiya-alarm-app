@@ -143,7 +143,7 @@ Future<void> _scheduleStopAlarm(int alarmId, DateTime ringAt, int durationSecond
 // kar leta hai. Asli "ring" ab seedha server se FCM push aane par
 // triggerImmediateAlarm() se hota hai (WhatsApp jaisa reliable) — isliye
 // phone ko khud "jaag" kar time check karne ki zaroorat nahi rehti.
-Future<List<Map<String, dynamic>>> fetchAndScheduleForMobile(String mobile) async {
+Future<List<Map<String, dynamic>>> fetchAndScheduleForMobile(String mobile, {bool force = false}) async {
   await Alarm.init();
   final uri = Uri.parse('$scheduleUrlBase?mobile=$mobile');
   final response = await http.get(uri).timeout(const Duration(seconds: 25));
@@ -166,6 +166,29 @@ Future<List<Map<String, dynamic>>> fetchAndScheduleForMobile(String mobile) asyn
   await _getLocalTonePath(eventToneUrl, 'event'); // event ki alag tone
   await _getLocalTonePath(liveToneUrl, 'live'); // live class ki alag tone
   await _getLocalTonePath(customToneUrl, 'custom'); // custom alarm ki alag tone
+  // Aaj + kal ke saare alarm phone mein khud EXACT time par set kar do
+  // (server ke push par nirbhar nahi — internet/token/cron ki dikkat se alarm
+  // kabhi miss ya late nahi hoga). Push ab sirf backup hai.
+  try {
+    List<dynamic> tomorrowSchedule = [];
+    try {
+      final t = DateTime.now().add(const Duration(days: 1));
+      final dStr = '${t.year}-${t.month.toString().padLeft(2, '0')}-${t.day.toString().padLeft(2, '0')}';
+      final r2 = await http.get(Uri.parse('$scheduleUrlBase?mobile=$mobile&date=$dStr')).timeout(const Duration(seconds: 25));
+      if (r2.statusCode == 200) {
+        final d2 = jsonDecode(r2.body);
+        if (d2['success'] == true) tomorrowSchedule = d2['schedule'] ?? [];
+      }
+    } catch (_) {}
+    await _scheduleLocalAlarms(
+      [...schedule, ...tomorrowSchedule],
+      startDuration: (data['start_alarm_duration_seconds'] as num?)?.toInt() ?? 60,
+      endDuration: (data['end_reminder_beep_seconds'] as num?)?.toInt() ?? 20,
+      endMinutesBefore: (data['end_reminder_minutes_before'] as num?)?.toInt() ?? 0,
+      force: force,
+    );
+  } catch (_) {}
+
   final now = DateTime.now();
   final List<Map<String, dynamic>> shownItems = [];
 
@@ -219,10 +242,130 @@ Future<String?> _getCachedTonePathOnly([String category = 'namaz']) async {
   return null;
 }
 
+// ---------- PHONE PAR EXACT-TIME ALARM (asli, bharosemand tareeka) ----------
+const String _kLocalAlarmRecords = 'local_alarm_records_v1';
+
+String _normTitle(String t) =>
+    t.replaceAll('\u23F3', '').replaceAll(RegExp(r'\s*\(\d+ min\)\s*$'), '').trim();
+
+// Server ke schedule ke har alarm ko phone ke AlarmManager mein exact time par
+// set karta hai. Agar app band ho, internet na ho, ya server ka push late/fail
+// ho — tab bhi ye alarm theek waqt par bajega.
+Future<void> _scheduleLocalAlarms(
+  List<dynamic> schedule, {
+  required int startDuration,
+  required int endDuration,
+  required int endMinutesBefore,
+  bool force = false,
+}) async {
+  final prefs = await SharedPreferences.getInstance();
+  await prefs.reload(); // doosre isolate ka likha hua bhi dikhe
+  final now = DateTime.now();
+  final newRecords = <Map<String, dynamic>>[];
+  final newIds = <int>{};
+
+  for (final raw in schedule) {
+    try {
+      final String title = raw['title'].toString();
+      final String type = (raw['type'] ?? '').toString();
+      DateTime at = DateTime.parse(raw['dateTime'].toString()).toLocal();
+      int duration = startDuration;
+      String category = 'namaz';
+      if (type == 'end_reminder') {
+        // Isha ka end alarm pehle jaisa server push se hi chalega
+        if (title.contains('Isha')) continue;
+        at = at.subtract(Duration(minutes: endMinutesBefore));
+        duration = endDuration;
+      } else if (type == 'event') {
+        category = 'event';
+      } else if (type == 'custom_alarm') {
+        category = 'custom';
+      }
+      // Guzar chuka (ya bilkul abhi) ho to chhod do; 2 din se door bhi nahi
+      if (!at.isAfter(now.add(const Duration(seconds: 20)))) continue;
+      if (at.isAfter(now.add(const Duration(hours: 50)))) continue;
+
+      final int id = idFromString('local_${raw['id']}');
+      newIds.add(id);
+      newRecords.add({'id': id, 'title': _normTitle(title), 'at': at.millisecondsSinceEpoch});
+
+      if (!force) {
+        final existing = await Alarm.getAlarm(id);
+        if (existing != null && existing.dateTime.difference(at).abs() < const Duration(seconds: 2)) {
+          continue; // pehle se sahi time par set hai
+        }
+      }
+      final localTonePath = await _getCachedTonePathOnly(category);
+      await Alarm.set(
+        alarmSettings: AlarmSettings(
+          id: id,
+          dateTime: at,
+          assetAudioPath: localTonePath,
+          loopAudio: true,
+          vibrate: true,
+          androidFullScreenIntent: true,
+          volumeSettings: VolumeSettings.fixed(volume: 1.0),
+          notificationSettings: NotificationSettings(
+            title: 'Silsila-e-Zahidiya Alarm',
+            body: translateAlarmTitle(title),
+            stopButton: 'Band Karo',
+          ),
+        ),
+      );
+      await _scheduleStopAlarm(id, at, duration);
+    } catch (_) {}
+  }
+
+  // Jo alarm ab schedule mein nahi (admin ne hata diye ya time badal diya) unhe band karo
+  try {
+    final oldJson = prefs.getString(_kLocalAlarmRecords);
+    if (oldJson != null) {
+      for (final r in (jsonDecode(oldJson) as List)) {
+        final int oid = r['id'] as int;
+        final DateTime oat = DateTime.fromMillisecondsSinceEpoch(r['at'] as int);
+        if (!newIds.contains(oid) && oat.isAfter(now)) {
+          await Alarm.stop(oid);
+        }
+      }
+    }
+  } catch (_) {}
+  await prefs.setString(_kLocalAlarmRecords, jsonEncode(newRecords));
+}
+
+// Server ka push aane par: agar isi alarm ko phone ne khud (exact time par)
+// baja diya hai ya baja raha hai, to dobara mat bajao. Agar phone wala alarm
+// fail hua (time nikal gaya par abhi bhi "pending" hai), to push se bajao.
+Future<bool> _localAlarmAlreadyHandled(String title) async {
+  try {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.reload(); // doosre isolate (app/WorkManager) ka likha hua bhi dikhe
+    final json = prefs.getString(_kLocalAlarmRecords);
+    if (json == null) return false;
+    await Alarm.init();
+    final now = DateTime.now();
+    final String wanted = _normTitle(title);
+    for (final r in (jsonDecode(json) as List)) {
+      if (r['title'] != wanted) continue;
+      final at = DateTime.fromMillisecondsSinceEpoch(r['at'] as int);
+      final diff = now.difference(at); // + matlab alarm ka time guzar chuka
+      if (diff < const Duration(seconds: -120) || diff > const Duration(minutes: 5)) continue;
+      final int id = r['id'] as int;
+      final still = await Alarm.getAlarm(id);
+      if (still == null) return true; // baj chuka aur band ho chuka
+      if (await Alarm.isRinging(id)) return true; // abhi baj raha hai
+      if (diff < const Duration(seconds: 30)) return true; // bas bajne hi wala hai
+      return false; // time nikal gaya par baja nahi — push se bajao
+    }
+  } catch (_) {}
+  return false;
+}
+
 // FCM push aate hi (server se, exact time par) yeh seedha loud alarm bajata hai.
 // wakelock isliye lagaya hai taaki background mein CPU turant so na jaaye
 // jab tak alarm set na ho jaaye — phone jaldi/pakka bajata hai.
 Future<void> triggerImmediateAlarm(String title, {int durationSeconds = 60, String category = 'namaz', bool showOverlay = true}) async {
+  // Phone ne yehi alarm pehle hi (exact time par) baja diya ho to push se dobara nahi
+  if (category != 'live' && await _localAlarmAlreadyHandled(title)) return;
   try {
     await WakelockPlus.enable();
   } catch (_) {}
@@ -296,7 +439,7 @@ Future<void> firebaseMessagingBackgroundHandler(fcm.RemoteMessage message) async
       final prefs = await SharedPreferences.getInstance();
       final mobile = prefs.getString('mobile');
       if (mobile != null && mobile.isNotEmpty) {
-        await fetchAndScheduleForMobile(mobile);
+        await fetchAndScheduleForMobile(mobile, force: true);
       }
     } catch (e) {}
     return;
@@ -1033,7 +1176,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     }
 
     try {
-      final items = await fetchAndScheduleForMobile(mobile);
+      final items = await fetchAndScheduleForMobile(mobile, force: true);
       _lastFetched = DateTime.now();
       setState(() {
         _loading = false;
