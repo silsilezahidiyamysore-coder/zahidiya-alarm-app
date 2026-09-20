@@ -331,6 +331,7 @@ Future<void> _scheduleLocalAlarms(
           assetAudioPath: localTonePath,
           loopAudio: true,
           vibrate: true,
+          warningNotificationOnKill: false, // "Your alarms may not ring" wali notification band
           androidFullScreenIntent: true,
           volumeSettings: VolumeSettings.fixed(volume: 1.0),
           notificationSettings: NotificationSettings(
@@ -404,6 +405,7 @@ Future<void> triggerImmediateAlarm(String title, {int durationSeconds = 60, Stri
     assetAudioPath: localTonePath,
     loopAudio: true,
     vibrate: true,
+    warningNotificationOnKill: false, // "Your alarms may not ring" wali notification band
     androidFullScreenIntent: true,
     volumeSettings: VolumeSettings.fixed(volume: 1.0),
     notificationSettings: NotificationSettings(
