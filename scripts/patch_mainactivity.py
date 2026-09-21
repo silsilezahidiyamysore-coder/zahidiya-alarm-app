@@ -35,7 +35,13 @@ class MainActivity : FlutterActivity() {
     // App aage aate hi alarm ka overlay hata do (ab app khud poori screen par hai)
     override fun onResume() {
         super.onResume()
+        AlarmOverlay.appInForeground = true
         AlarmOverlay.hide()
+    }
+
+    override fun onPause() {
+        AlarmOverlay.appInForeground = false
+        super.onPause()
     }
 
     override fun onDestroy() {
@@ -49,6 +55,8 @@ class MainActivity : FlutterActivity() {
 
 OVERLAY_KT = r"""package com.zahidiya.alarm
 
+import android.app.AlarmManager
+import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -67,10 +75,13 @@ import android.widget.LinearLayout
 import android.widget.TextView
 
 // Alarm bajte hi YouTube/Facebook jaisi kisi bhi app ke UPAR poori screen ka
-// alarm dikhata hai ("Display over other apps" ki ijazat se). Isse Android
-// ki "background se app kholne ki rok" bhi hat jaati hai, aur alarm app
-// poori screen par aa jaati hai.
+// alarm dikhata hai ("Display over other apps" ki ijazat se), aur alarm app ko
+// bhi aage le aata hai. Ye alarm ki asli ringing se bilkul alag hai — isme kuch
+// bhi gadbad ho to alarm ki awaaz par koi asar nahi padta.
 object AlarmOverlay {
+    @Volatile
+    var appInForeground: Boolean = false
+
     private var overlayView: View? = null
     private var appContext: Context? = null
     private val handler = Handler(Looper.getMainLooper())
@@ -78,6 +89,7 @@ object AlarmOverlay {
 
     fun openApp(context: Context) {
         try {
+            if (appInForeground) return
             val i = Intent()
             i.setClassName(context.packageName, "com.zahidiya.alarm.MainActivity")
             i.addFlags(
@@ -92,6 +104,7 @@ object AlarmOverlay {
 
     fun show(context: Context, title: String, seconds: Int) {
         try {
+            if (appInForeground) return // app pehle se saamne hai
             if (!Settings.canDrawOverlays(context)) return
             hide()
             appContext = context
@@ -172,22 +185,69 @@ object AlarmOverlay {
     }
 }
 
+// Overlay abhi dikhane ka hukm (server ke push wale backup alarm ke liye)
 class AlarmOverlayReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
-        val title = intent.getStringExtra("title") ?: "Alarm"
-        val seconds = intent.getIntExtra("seconds", 60)
-        val app = context.applicationContext
-        AlarmOverlay.show(app, title, seconds)
-        // Overlay dikhne ke thodi der baad app bhi aage laao (Android 15 ke liye
-        // "visible overlay window" zaroori hai)
-        val pending = goAsync()
-        Handler(Looper.getMainLooper()).postDelayed({
-            try {
-                AlarmOverlay.openApp(app)
-            } finally {
-                pending.finish()
+        try {
+            val title = intent.getStringExtra("title") ?: "Alarm"
+            val seconds = intent.getIntExtra("seconds", 60)
+            val app = context.applicationContext
+            AlarmOverlay.show(app, title, seconds)
+            // Overlay dikhne ke thodi der baad app bhi aage laao (Android 15 ke liye
+            // "visible overlay window" zaroori hai)
+            val pending = goAsync()
+            Handler(Looper.getMainLooper()).postDelayed({
+                try {
+                    AlarmOverlay.openApp(app)
+                } finally {
+                    pending.finish()
+                }
+            }, 400)
+        } catch (e: Exception) {
+        }
+    }
+}
+
+// Phone ke alarm ke SAATH-SAATH usi exact time par overlay dikhane ka apna
+// AlarmManager alarm lagata / hataata hai (Dart se broadcast aata hai).
+class OverlayScheduleReceiver : BroadcastReceiver() {
+    companion object {
+        const val ACTION_SCHEDULE = "com.zahidiya.alarm.SCHEDULE_OVERLAY"
+        const val ACTION_CANCEL = "com.zahidiya.alarm.CANCEL_OVERLAY"
+
+        fun pendingFor(context: Context, id: Int, title: String, seconds: Int): PendingIntent {
+            val i = Intent(context, AlarmOverlayReceiver::class.java)
+            i.action = "com.zahidiya.alarm.SHOW_OVERLAY"
+            i.putExtra("title", title)
+            i.putExtra("seconds", seconds)
+            var flags = PendingIntent.FLAG_UPDATE_CURRENT
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                flags = flags or PendingIntent.FLAG_IMMUTABLE
             }
-        }, 400)
+            return PendingIntent.getBroadcast(context, id, i, flags)
+        }
+    }
+
+    override fun onReceive(context: Context, intent: Intent) {
+        try {
+            val am = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+            val id = intent.getIntExtra("id", 0)
+            val title = intent.getStringExtra("title") ?: "Alarm"
+            val seconds = intent.getIntExtra("seconds", 60)
+            val pi = pendingFor(context, id, title, seconds)
+            if (intent.action == ACTION_CANCEL) {
+                am.cancel(pi)
+                return
+            }
+            val at = (intent.getStringExtra("at") ?: "0").toLong()
+            if (at <= System.currentTimeMillis()) return
+            try {
+                am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pi)
+            } catch (e: SecurityException) {
+                am.set(AlarmManager.RTC_WAKEUP, at, pi)
+            }
+        } catch (e: Exception) {
+        }
     }
 }
 """
