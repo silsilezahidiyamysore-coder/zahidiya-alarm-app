@@ -45,6 +45,18 @@ receiver_tag = (
 if "AlarmOverlayReceiver" not in content:
     content = content.replace("</application>", receiver_tag + "</application>")
 
+# Phone ke alarm ke saath exact time par overlay lagane / hataane wala receiver
+schedule_tag = (
+    '    <receiver android:name="com.zahidiya.alarm.OverlayScheduleReceiver" android:exported="false">\n'
+    '        <intent-filter>\n'
+    '            <action android:name="com.zahidiya.alarm.SCHEDULE_OVERLAY" />\n'
+    '            <action android:name="com.zahidiya.alarm.CANCEL_OVERLAY" />\n'
+    '        </intent-filter>\n'
+    '    </receiver>\n'
+)
+if "OverlayScheduleReceiver" not in content:
+    content = content.replace("</application>", schedule_tag + "</application>")
+
 # MainActivity ko lock-screen ke upar dikhne aur screen ON karne ki ijazat do
 # (alarm bajte waqt app poori screen par aaye, chahe phone locked ho).
 import re
