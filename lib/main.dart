@@ -115,6 +115,36 @@ Future<void> _showAlarmOverlay(String title, int seconds) async {
   } catch (_) {}
 }
 
+// Phone ke alarm ke saath-saath usi exact time par "kisi bhi app ke upar poori
+// screen ka alarm" (overlay) lagata / hataata hai. Ye alarm ki ringing se bilkul
+// alag hai — isme kuch bhi gadbad ho to alarm ki awaaz par asar nahi padta.
+Future<void> _scheduleOverlay(int id, DateTime at, String title, int seconds) async {
+  try {
+    final intent = AndroidIntent(
+      action: 'com.zahidiya.alarm.SCHEDULE_OVERLAY',
+      package: 'com.zahidiya.alarm',
+      arguments: <String, dynamic>{
+        'id': id,
+        'at': at.millisecondsSinceEpoch.toString(),
+        'title': title,
+        'seconds': seconds,
+      },
+    );
+    await intent.sendBroadcast();
+  } catch (_) {}
+}
+
+Future<void> _cancelOverlay(int id) async {
+  try {
+    final intent = AndroidIntent(
+      action: 'com.zahidiya.alarm.CANCEL_OVERLAY',
+      package: 'com.zahidiya.alarm',
+      arguments: <String, dynamic>{'id': id, 'title': 'x', 'seconds': 10},
+    );
+    await intent.sendBroadcast();
+  } catch (_) {}
+}
+
 int idFromString(String s) {
   int hash = 0;
   for (final unit in s.codeUnits) {
@@ -317,6 +347,10 @@ Future<void> _scheduleLocalAlarms(
       newIds.add(id);
       newRecords.add({'id': id, 'title': _normTitle(title), 'at': at.millisecondsSinceEpoch});
 
+      // Overlay har baar dobara lagate hain (wahi id/time se, to bas badal jaata hai) —
+      // taaki phone restart ke baad bhi wapas lag jaaye
+      await _scheduleOverlay(id, at, translateAlarmTitle(title), duration);
+
       if (!force) {
         final existing = await Alarm.getAlarm(id);
         if (existing != null && existing.dateTime.difference(at).abs() < const Duration(seconds: 2)) {
@@ -354,6 +388,12 @@ Future<void> _scheduleLocalAlarms(
         final DateTime oat = DateTime.fromMillisecondsSinceEpoch(r['at'] as int);
         if (!newIds.contains(oid) && oat.isAfter(now)) {
           await Alarm.stop(oid);
+          await _cancelOverlay(oid);
+        } else if (!newIds.contains(oid) && now.difference(oat) < const Duration(minutes: 15)) {
+          // BUG FIX: baj chuke alarm ka record 15 minute tak rakhte hain. Pehle
+          // naya schedule lete hi ye record mit jaata tha, aur server ka push
+          // (jo 1-2 minute late aata hai) usi alarm ko DOOBARA baja deta tha.
+          newRecords.add(Map<String, dynamic>.from(r as Map));
         }
       }
     }
@@ -416,10 +456,11 @@ Future<void> triggerImmediateAlarm(String title, {int durationSeconds = 60, Stri
   );
   await Alarm.set(alarmSettings: alarmSettings);
   await _scheduleStopAlarm(alarmId, ringAt, durationSeconds);
-  // NOTE: alarm bajne ka raasta ab bilkul saada rakha hai (sirf Alarm.set).
-  // "Kisi bhi app ke upar full screen" wale extra kaam (_showAlarmOverlay /
-  // _bringAppToFront) yahan se hata diye hain, taaki wo alarm ki ringing mein
-  // kabhi rukawat na bana sakein. Wo alag se, alarm ko chhue bina, baad mein.
+  // Alarm ab baj raha hai. Uske BAAD (alarm ko chhue bina) kisi bhi app ke upar
+  // poori screen ka overlay dikhate hain — isme gadbad ho to alarm par asar nahi.
+  if (showOverlay) {
+    await _showAlarmOverlay(translateAlarmTitle(title), durationSeconds);
+  }
   // BUG FIX: pehle yahan turant WakelockPlus.disable() ho jaata tha —
   // is wajah se kabhi-kabhi phone ki screen 2-3 second mein hi wapas so
   // jaati thi, aur app usko "user ne khud screen off/lock ki" samajh ke
