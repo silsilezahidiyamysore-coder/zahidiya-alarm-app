@@ -907,6 +907,16 @@ class _EventContentScreenState extends State<EventContentScreen> {
           ..setBackgroundColor(Colors.black)
           ..loadRequest(Uri.parse('https://www.youtube.com/embed/$id?autoplay=1&playsinline=1'));
       }
+    } else if (widget.contentType == 'video') {
+      final safe = _url.replaceAll('"', '%22');
+      _web = WebViewController()
+        ..setJavaScriptMode(JavaScriptMode.unrestricted)
+        ..setBackgroundColor(Colors.black)
+        ..loadHtmlString(
+          '<html><head><meta name="viewport" content="width=device-width, initial-scale=1"></head>'
+          '<body style="margin:0;background:#000;display:flex;align-items:center;justify-content:center;height:100vh;">'
+          '<video controls autoplay playsinline style="max-width:100%;max-height:100%" src="$safe"></video></body></html>',
+        );
     } else if (widget.contentType == 'audio') {
       final safe = _url.replaceAll('"', '%22');
       _web = WebViewController()
