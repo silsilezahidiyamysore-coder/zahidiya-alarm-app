@@ -882,6 +882,14 @@ class _EventContentScreenState extends State<EventContentScreen> {
     return u.startsWith('/') ? 'https://zahidiya-mysore.pages.dev$u' : u;
   }
 
+  // Kisi bhi YouTube link (video ya /live/...) se uski ID nikalta hai, taaki
+  // use isi screen ke andar (embed) dikhaya ja sake — YouTube app nahi khulti
+  String? get _youtubeId {
+    final m = RegExp(r'(?:youtu\.be/|youtube\.com/(?:watch\?v=|live/|embed/|shorts/))([A-Za-z0-9_-]{6,})')
+        .firstMatch(widget.fileUrl);
+    return m?.group(1);
+  }
+
   @override
   void initState() {
     super.initState();
@@ -891,6 +899,14 @@ class _EventContentScreenState extends State<EventContentScreen> {
       _web = WebViewController()
         ..setJavaScriptMode(JavaScriptMode.unrestricted)
         ..loadRequest(Uri.parse('https://docs.google.com/gview?embedded=true&url=${Uri.encodeComponent(_url)}'));
+    } else if (widget.contentType == 'youtube') {
+      final id = _youtubeId;
+      if (id != null) {
+        _web = WebViewController()
+          ..setJavaScriptMode(JavaScriptMode.unrestricted)
+          ..setBackgroundColor(Colors.black)
+          ..loadRequest(Uri.parse('https://www.youtube.com/embed/$id?autoplay=1&playsinline=1'));
+      }
     } else if (widget.contentType == 'audio') {
       final safe = _url.replaceAll('"', '%22');
       _web = WebViewController()
@@ -930,6 +946,10 @@ class _EventContentScreenState extends State<EventContentScreen> {
       );
     }
     if (_web != null) return WebViewWidget(controller: _web!);
+    if (type == 'youtube') {
+      // Sahi YouTube link nahi mila
+      return Center(child: Text(tr('no_event_content'), style: appFont()));
+    }
     return Center(child: Text(tr('no_event_content'), style: appFont()));
   }
 
