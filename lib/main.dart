@@ -77,7 +77,7 @@ Future<String?> _getLocalTonePath(String? toneUrl, [String category = 'namaz']) 
 // Namaz ke "shuru" aur "khatam" alarm titles pehchanne ke liye (backend ke
 // fixed text se match hote hain). Emoji ho ya na ho, dono chalega.
 final RegExp _startTitleRe = RegExp(r'^(Fajr|Dhuhr|Asr|Maghrib|Isha) ki namaz ka waqt ho gaya hai$');
-final RegExp _endTitleRe = RegExp(r'^(?:⏳ )?(Fajr|Dhuhr|Asr|Maghrib|Isha) ki namaz khatam hone wali hai$');
+final RegExp _endTitleRe = RegExp(r'^(?:⏳ )?(Fajr|Dhuhr|Asr|Maghrib|Isha) ki namaz khatam hone wali hai(?:\s*\((\d+)\s*min\))?$');
 
 // Alarm bajte hi app ko sabse aage (full screen) le aata hai — chahe phone
 // unlock ho aur koi aur app chal rahi ho. Iske liye phone mein "Display over
@@ -318,7 +318,7 @@ Future<void> _scheduleLocalAlarms(
 
   for (final raw in schedule) {
     try {
-      final String title = raw['title'].toString();
+      String title = raw['title'].toString();
       final String type = (raw['type'] ?? '').toString();
       DateTime at = DateTime.parse(raw['dateTime'].toString()).toLocal();
       int duration = startDuration;
@@ -328,6 +328,12 @@ Future<void> _scheduleLocalAlarms(
         if (title.contains('Isha')) continue;
         at = at.subtract(Duration(minutes: endMinutesBefore));
         duration = endDuration;
+        // Kitne minute mein namaz khatam ho rahi hai, ye title ke saath jod
+        // dete hain (jaise "Fajr ki namaz khatam hone wali hai (15 min)") —
+        // translateAlarmTitle() ise pehchan kar naya wording banata hai.
+        if (endMinutesBefore > 0 && !title.contains('(')) {
+          title = '$title ($endMinutesBefore min)';
+        }
       } else if (type == 'event') {
         category = 'event';
       } else if (type == 'custom_alarm') {
@@ -598,6 +604,7 @@ Future<void> main() async {
   } catch (e) {}
 
   await AppLang.load();
+  await AppUser.load();
   try {
     // Font ko pehle hi download/cache karke rakh do, taaki jab bhi user
     // Urdu par switch kare, turant sahi (Nastaliq) font dikhe — koi flash/farak na aaye.
@@ -622,6 +629,24 @@ class AppLang {
   }
 }
 
+// ---------- MUREED KA NAAM (login ke baad screen par sab se upar dikhane ke liye) ----------
+class AppUser {
+  static String name = '';
+  static Future<void> load() async {
+    final prefs = await SharedPreferences.getInstance();
+    name = prefs.getString('mureed_name') ?? '';
+  }
+  static Future<void> save(String newName) async {
+    name = newName;
+    final prefs = await SharedPreferences.getInstance();
+    if (newName.isEmpty) {
+      await prefs.remove('mureed_name');
+    } else {
+      await prefs.setString('mureed_name', newName);
+    }
+  }
+}
+
 const Map<String, Map<String, String>> kStrings = {
   'en': {
     'app_title': 'Silsila-e-Zahidiya Alarm',
@@ -641,6 +666,7 @@ const Map<String, Map<String, String>> kStrings = {
     'status_error_prefix': 'Internet or server issue: ',
     'lang_toggle': '🌐 اردو',
     'prayer_start_label': 'Start', 'prayer_end_label': 'End', 'active_now_label': '🟢 Now',
+    'minutes_left_suffix': 'minute left',
   },
   'ur': {
     'app_title': 'سلسلہ زاہدیہ الارم',
@@ -660,19 +686,45 @@ const Map<String, Map<String, String>> kStrings = {
     'status_error_prefix': 'انٹرنیٹ یا سرور میں مسئلہ: ',
     'lang_toggle': '🌐 English',
     'prayer_start_label': 'شروع', 'prayer_end_label': 'ختم', 'active_now_label': '🟢 ابھی',
+    'minutes_left_suffix': 'منٹ باقی',
   },
 };
 
 String tr(String key) => kStrings[AppLang.current]?[key] ?? kStrings['en']![key] ?? key;
 
 // Backend (website) se aane wale Namaz reminder titles fixed pattern mein hote hain
-// (jaise "Fajr ki namaz ka waqt ho gaya hai"). Inko Urdu mode mein yahin app ke
-// andar translate kar dete hain, backend badle bina.
+// (jaise "Fajr ki namaz ka waqt ho gaya hai"). Inko yahin app ke andar (dono
+// language mein) naye wording ke saath translate kar dete hain, backend badle bina.
 const Map<String, String> _prayerNameUr = {
   'Fajr': 'فجر', 'Dhuhr': 'ظہر', 'Asr': 'عصر', 'Maghrib': 'مغرب', 'Isha': 'عشاء',
 };
 
 String prayerLabel(String name) => AppLang.current == 'ur' ? (_prayerNameUr[name] ?? name) : name;
+
+// Namaz shuru hone ka message: "Fajr ki namaz ka waqt ab shuru ho gaya hai"
+String prayerStartMessage(String prayerName) {
+  final name = prayerLabel(prayerName);
+  if (AppLang.current == 'ur') {
+    return '🕌 $name کی نماز کا وقت اب شروع ہو گیا ہے';
+  }
+  return '🕌 $name ki namaz ka waqt ab shuru ho gaya hai';
+}
+
+// Namaz khatam hone ka message: "Fajr ki namaz ka waqt khatam hone wala hai
+// (X minute baaki hai)" — minutesLeft na mile to bina minute ke dikhta hai.
+String prayerEndMessage(String prayerName, {int? minutesLeft}) {
+  final name = prayerLabel(prayerName);
+  if (AppLang.current == 'ur') {
+    final minsTxt = (minutesLeft != null && minutesLeft > 0)
+        ? ' ($minutesLeft ${tr('minutes_left_suffix')})'
+        : '';
+    return '⏳ $name کی نماز کا وقت ختم ہونے والا ہے$minsTxt';
+  }
+  final minsTxt = (minutesLeft != null && minutesLeft > 0)
+      ? ' ($minutesLeft ${tr('minutes_left_suffix')})'
+      : '';
+  return '⏳ $name ki namaz ka waqt khatam hone wala hai$minsTxt';
+}
 
 // Har namaz ka "shuru" aur "khatam" alarm alag-alag items hote hain (backend se) —
 // yahan dono ko ek hi prayer ke naam se jod kar ek group bana dete hain, taaki
@@ -755,16 +807,18 @@ String translateAlarmTitle(String title) {
       return AppLang.current == 'ur' ? urdu : english;
     }
   }
-  if (AppLang.current != 'ur') return title;
-  for (final entry in _prayerNameUr.entries) {
-    if (title == '${entry.key} ki namaz ka waqt ho gaya hai') {
-      return '${entry.value} کی نماز کا وقت ہو گیا ہے';
-    }
-    if (title == '${entry.key} ki namaz khatam hone wali hai' ||
-        title == '⏳ ${entry.key} ki namaz khatam hone wali hai') {
-      return '⏳ ${entry.value} کی نماز ختم ہونے والی ہے';
-    }
+  // Namaz "shuru" ka fixed backend title
+  final sm = _startTitleRe.firstMatch(title);
+  if (sm != null) {
+    return prayerStartMessage(sm.group(1)!);
   }
+  // Namaz "khatam hone wali hai" ka fixed backend title (minute count sath ho to wo bhi)
+  final em = _endTitleRe.firstMatch(title);
+  if (em != null) {
+    final mins = em.group(2) != null ? int.tryParse(em.group(2)!) : null;
+    return prayerEndMessage(em.group(1)!, minutesLeft: mins);
+  }
+  if (AppLang.current != 'ur') return title;
   if (title == 'Alarm') return 'الارم';
   return title; // custom event/alarm titles jo admin ne khud likhe (bina pipe ke), wo waise hi rahenge
 }
@@ -842,7 +896,8 @@ class ZahidiyaAlarmApp extends StatelessWidget {
 }
 
 // Alarm bajte hi yeh bada, saaf screen dikhta hai — "Band Karo" button
-// hamesha turant nazar aayega, chhota/chhupa hua nahi.
+// hamesha turant nazar aayega, chhota/chhupa hua nahi. Sabse upar (agar
+// pata ho) mureed ka naam bhi dikhta hai.
 // Event ka text ("English \n[[UR]]\n اردو" format mein save hota hai) — sirf
 // app ki chuni hui language ka hissa dikhao.
 const String _urTextMark = '\n[[UR]]\n';
@@ -978,10 +1033,12 @@ class _EventContentScreenState extends State<EventContentScreen> {
 
 class AlarmRingingScreen extends StatelessWidget {
   final String title;
-  const AlarmRingingScreen({super.key, required this.title});
+  final String? mureedName;
+  const AlarmRingingScreen({super.key, required this.title, this.mureedName});
 
   @override
   Widget build(BuildContext context) {
+    final name = mureedName ?? AppUser.name;
     return PopScope(
       canPop: false,
       child: Scaffold(
@@ -993,6 +1050,14 @@ class AlarmRingingScreen extends StatelessWidget {
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
+                  if (name.trim().isNotEmpty) ...[
+                    MixedText(
+                      name,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w600),
+                    ),
+                    const SizedBox(height: 16),
+                  ],
                   const Icon(Icons.alarm, color: Colors.white, size: 90),
                   const SizedBox(height: 24),
                   MixedText(
@@ -1253,6 +1318,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         });
         return;
       }
+      // Backend agar mureed ka naam bhejta hai (verify-mobile response mein
+      // "name" field), to use save kar lete hain — alarm bajte waqt sabse
+      // upar dikhane ke liye.
+      final String? fetchedName = verifyData['name']?.toString();
+      if (fetchedName != null && fetchedName.trim().isNotEmpty) {
+        await AppUser.save(fetchedName.trim());
+      }
     } catch (e) {
       setState(() {
         _statusKind = 'verify_error';
@@ -1306,7 +1378,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text(tr('app_title'), style: appFont()),
+        title: Text(
+          AppUser.name.trim().isNotEmpty ? AppUser.name : tr('app_title'),
+          style: appFont(),
+        ),
         backgroundColor: Colors.green,
         foregroundColor: Colors.white,
         actions: [
