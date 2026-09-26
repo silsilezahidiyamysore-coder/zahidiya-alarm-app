@@ -629,9 +629,149 @@ class AppLang {
   }
 }
 
-// ---------- MUREED KA NAAM (login ke baad screen par sab se upar dikhane ke liye) ----------
+// Agar koi text "English | اردو" format mein diya gaya ho (jaise events ke
+// title mein pehle se hota hai), to sirf app ki abhi chuni hui language ka
+// hissa nikalta hai. Agar pipe nahi hai (sirf ek hi language ka text), to
+// wahi text waapas kar deta hai (koi translation/transliteration nahi hoti).
+String pickByLang(String raw) {
+  if (raw.contains('|')) {
+    final parts = raw.split('|').map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
+    if (parts.length >= 2) {
+      final hasUrdu = RegExp('[\u0600-\u06FF]');
+      final urdu = parts.firstWhere((p) => hasUrdu.hasMatch(p), orElse: () => parts[1]);
+      final english = parts.firstWhere((p) => !hasUrdu.hasMatch(p), orElse: () => parts[0]);
+      return AppLang.current == 'ur' ? urdu : english;
+    }
+  }
+  return raw.trim();
+}
+
+// Roman Urdu mein likhe aam Islami/Urdu naam (jaise "syed", "shabbir") ke
+// Urdu-script spelling — mureed ka naam khud-b-khud Urdu mein dikhane ke
+// liye. Ye ek fixed dictionary hai (jaisi Fajr/Dhuhr ke liye upar hai),
+// isliye sirf inhi mein se jo lafz naam mein mile wo Urdu mein badlega;
+// koi naya/anokha lafz mile to wo Roman mein hi reh jaayega.
+const Map<String, String> _romanUrduNameWords = {
+  'syed': 'سید', 'sayyid': 'سید', 'sayed': 'سید',
+  'shabbir': 'شبیر', 'shabir': 'شبیر',
+  'muhammad': 'محمد', 'mohammed': 'محمد', 'mohammad': 'محمد', 'mohd': 'محمد', 'md': 'محمد',
+  'ahmed': 'احمد', 'ahmad': 'احمد',
+  'ali': 'علی', 'alli': 'علی',
+  'hussain': 'حسین', 'husain': 'حسین', 'hussein': 'حسین', 'hussan': 'حسین',
+  'hassan': 'حسن', 'hasan': 'حسن',
+  'abbas': 'عباس',
+  'abdul': 'عبد', 'abdullah': 'عبداللہ',
+  'rahim': 'رحیم', 'rahman': 'رحمٰن',
+  'karim': 'کریم', 'kareem': 'کریم',
+  'fatima': 'فاطمہ', 'fatema': 'فاطمہ',
+  'zainab': 'زینب', 'zaynab': 'زینب',
+  'aisha': 'عائشہ', 'ayesha': 'عائشہ',
+  'khadija': 'خدیجہ',
+  'bilal': 'بلال',
+  'bibi': 'بی بی',
+  'zahid': 'زاہد', 'zahida': 'زاہدہ',
+  'zahidiya': 'زاہدیہ',
+  'anwar': 'انور', 'akhtar': 'اختر',
+  'iqbal': 'اقبال', 'nawaz': 'نواز', 'sharif': 'شریف',
+  'khan': 'خان',
+  'sheikh': 'شیخ', 'shaikh': 'شیخ',
+  'qadri': 'قادری', 'chishti': 'چشتی', 'naqshbandi': 'نقشبندی',
+  'farooq': 'فاروق', 'farooque': 'فاروق',
+  'usman': 'عثمان', 'uthman': 'عثمان',
+  'umar': 'عمر', 'omar': 'عمر',
+  'bakar': 'بکر', 'bakr': 'بکر',
+  'jafar': 'جعفر', 'zafar': 'ظفر',
+  'hasnain': 'حسنین', 'zulfiqar': 'ذوالفقار',
+  'yusuf': 'یوسف', 'yousuf': 'یوسف',
+  'ibrahim': 'ابراہیم',
+  'ismail': 'اسماعیل', 'ismael': 'اسماعیل',
+  'dawood': 'داؤد', 'dawud': 'داؤد',
+  'sulaiman': 'سلیمان', 'suleman': 'سلیمان',
+  'musa': 'موسیٰ', 'isa': 'عیسیٰ',
+  'ghulam': 'غلام',
+  'imran': 'عمران',
+  'amir': 'عامر', 'ameer': 'امیر',
+  'asif': 'آصف',
+  'kamal': 'کمال', 'jamal': 'جمال', 'kamran': 'کامران',
+  'nasir': 'ناصر', 'naseer': 'نصیر',
+  'tariq': 'طارق',
+  'waseem': 'وسیم', 'wasim': 'وسیم',
+  'naeem': 'نعیم', 'tahir': 'طاہر',
+  'zain': 'زین', 'zayn': 'زین',
+  'saba': 'صبا', 'sana': 'ثنا',
+  'amna': 'آمنہ', 'aamna': 'آمنہ',
+  'mariam': 'مریم', 'maryam': 'مریم',
+  'hina': 'حنا',
+  'rukhsana': 'رخسانہ', 'nasreen': 'نسرین',
+  'shabnam': 'شبنم', 'shazia': 'شازیہ',
+  'shaheen': 'شاہین', 'shahid': 'شاہد', 'shahida': 'شاہدہ',
+  'javed': 'جاوید', 'javaid': 'جاوید',
+  'kausar': 'کوثر', 'kauser': 'کوثر',
+  'mumtaz': 'ممتاز', 'nusrat': 'نصرت',
+  'parveen': 'پروین', 'perveen': 'پروین',
+  'rashida': 'راشدہ', 'rehana': 'ریحانہ',
+  'riaz': 'ریاض', 'riyaz': 'ریاض',
+  'saleem': 'سلیم', 'salim': 'سلیم', 'salma': 'سلمیٰ',
+  'shaista': 'شائستہ',
+  'yasmin': 'یاسمین', 'yasmeen': 'یاسمین',
+  'feroz': 'فیروز', 'firoz': 'فیروز',
+  'rafiq': 'رفیق', 'rafique': 'رفیق',
+  'hameed': 'حمید', 'hamid': 'حامد',
+  'wahid': 'واحد', 'waheed': 'وحید',
+  'majeed': 'مجید',
+  'aziz': 'عزیز', 'aziza': 'عزیزہ',
+  'latif': 'لطیف', 'lateef': 'لطیف',
+  'noor': 'نور', 'nur': 'نور',
+  'sabir': 'صابر', 'shakir': 'شاکر',
+  'basheer': 'بشیر', 'bashir': 'بشیر',
+  'mubarak': 'مبارک',
+  'sultan': 'سلطان', 'sultana': 'سلطانہ',
+  'begum': 'بیگم', 'bano': 'بانو', 'banu': 'بانو',
+};
+
+// Backend se aaya naam agar sirf Roman (English) script mein ho (pipe format
+// mein Urdu waala hissa na diya gaya ho), to har lafz ko upar ki dictionary
+// se milaakar best-effort Urdu spelling banata hai. Jo lafz dictionary mein
+// na mile wo Roman mein hi reh jaata hai (100% guarantee nahi, par zyaadatar
+// aam Islami naam sahi Urdu mein dikh jaate hain).
+String transliterateNameToUrdu(String name) {
+  final words = name.trim().split(RegExp(r'\s+'));
+  return words.map((w) {
+    final clean = w.toLowerCase().replaceAll(RegExp(r'[^a-z]'), '');
+    return _romanUrduNameWords[clean] ?? w;
+  }).join(' ');
+}
+
+// English/Roman spelling ke naam ko Urdu script mein transliterate karta hai
+// (Google ke input-tools transliteration engine se — wahi jo phone ke Urdu
+// keyboard mein use hota hai). Internet na ho ya fail ho jaaye to null
+// deta hai, is case mein naam sirf jis language mein aaya tha usi mein dikhega.
+Future<String?> _transliterateToUrdu(String englishText) async {
+  try {
+    final uri = Uri.parse(
+      'https://inputtools.google.com/request?text=${Uri.encodeComponent(englishText)}&itc=ur-t-i0-und&num=1&cp=0&cs=1&ie=utf-8&oe=utf-8',
+    );
+    final res = await http.get(uri).timeout(const Duration(seconds: 8));
+    if (res.statusCode == 200) {
+      final data = jsonDecode(res.body);
+      if (data is List && data.isNotEmpty && data[0] == 'SUCCESS') {
+        final suggestions = data[1][0][1] as List;
+        if (suggestions.isNotEmpty) return suggestions[0].toString();
+      }
+    }
+  } catch (_) {}
+  return null;
+}
+// Agar backend naam "English | اردو" format mein bheje (jaise "Syed Shabbir
+// | سید شبیر"), to wahi Urdu hissa dikhta hai (sabse accurate). Warna app
+// khud upar ki dictionary se best-effort Urdu transliteration bana leta hai.
 class AppUser {
   static String name = '';
+  static String get displayName {
+    if (name.contains('|')) return pickByLang(name);
+    if (AppLang.current == 'ur') return transliterateNameToUrdu(name);
+    return name.trim();
+  }
   static Future<void> load() async {
     final prefs = await SharedPreferences.getInstance();
     name = prefs.getString('mureed_name') ?? '';
@@ -666,7 +806,7 @@ const Map<String, Map<String, String>> kStrings = {
     'status_error_prefix': 'Internet or server issue: ',
     'lang_toggle': '🌐 اردو',
     'prayer_start_label': 'Start', 'prayer_end_label': 'End', 'active_now_label': '🟢 Now',
-    'minutes_left_suffix': 'minute left',
+    'minutes_left_suffix': 'minute baaki hai',
   },
   'ur': {
     'app_title': 'سلسلہ زاہدیہ الارم',
@@ -799,13 +939,7 @@ String translateAlarmTitle(String title) {
   // to sirf usi language ka hissa dikhao jo app mein abhi chuni hui hai
   // (English mode mein English, Urdu mode mein Urdu) — dono mix nahi hote.
   if (title.contains('|')) {
-    final parts = title.split('|').map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
-    if (parts.length >= 2) {
-      final hasUrdu = RegExp('[\u0600-\u06FF]');
-      final urdu = parts.firstWhere((p) => hasUrdu.hasMatch(p), orElse: () => parts[1]);
-      final english = parts.firstWhere((p) => !hasUrdu.hasMatch(p), orElse: () => parts[0]);
-      return AppLang.current == 'ur' ? urdu : english;
-    }
+    return pickByLang(title);
   }
   // Namaz "shuru" ka fixed backend title
   final sm = _startTitleRe.firstMatch(title);
@@ -1038,7 +1172,7 @@ class AlarmRingingScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final name = mureedName ?? AppUser.name;
+    final name = mureedName ?? AppUser.displayName;
     return PopScope(
       canPop: false,
       child: Scaffold(
@@ -1054,7 +1188,7 @@ class AlarmRingingScreen extends StatelessWidget {
                     MixedText(
                       name,
                       textAlign: TextAlign.center,
-                      style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w600),
+                      style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
                     ),
                     const SizedBox(height: 16),
                   ],
@@ -1320,10 +1454,23 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       }
       // Backend agar mureed ka naam bhejta hai (verify-mobile response mein
       // "name" field), to use save kar lete hain — alarm bajte waqt sabse
-      // upar dikhane ke liye.
+      // upar dikhane ke liye. Agar naam mein Urdu script nahi hai (i.e.
+      // Roman/English mein likha hai), to khud-ba-khud uska Urdu version bhi
+      // nikaal kar "English | Urdu" format mein save karte hain, taaki naam
+      // bhi baaki page ki tarah language ke hisaab se badalta rahe.
       final String? fetchedName = verifyData['name']?.toString();
       if (fetchedName != null && fetchedName.trim().isNotEmpty) {
-        await AppUser.save(fetchedName.trim());
+        final String cleanName = fetchedName.trim();
+        final bool alreadyBilingual = cleanName.contains('|');
+        final bool hasUrduScript = RegExp('[\u0600-\u06FF]').hasMatch(cleanName);
+        if (!alreadyBilingual && !hasUrduScript) {
+          final urduName = await _transliterateToUrdu(cleanName);
+          await AppUser.save(urduName != null && urduName.isNotEmpty
+              ? '$cleanName | $urduName'
+              : cleanName);
+        } else {
+          await AppUser.save(cleanName);
+        }
       }
     } catch (e) {
       setState(() {
@@ -1379,7 +1526,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     return Scaffold(
       appBar: AppBar(
         title: Text(
-          AppUser.name.trim().isNotEmpty ? AppUser.name : tr('app_title'),
+          AppUser.displayName.trim().isNotEmpty ? AppUser.displayName : tr('app_title'),
           style: appFont(),
         ),
         backgroundColor: Colors.green,
