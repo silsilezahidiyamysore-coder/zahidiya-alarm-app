@@ -807,6 +807,7 @@ const Map<String, Map<String, String>> kStrings = {
     'lang_toggle': '🌐 اردو',
     'prayer_start_label': 'Start', 'prayer_end_label': 'End', 'active_now_label': '🟢 Now',
     'minutes_left_suffix': 'minute baaki hai',
+    'change_number_label': '✏️ Change mobile number',
   },
   'ur': {
     'app_title': 'سلسلہ زاہدیہ الارم',
@@ -827,6 +828,7 @@ const Map<String, Map<String, String>> kStrings = {
     'lang_toggle': '🌐 English',
     'prayer_start_label': 'شروع', 'prayer_end_label': 'ختم', 'active_now_label': '🟢 ابھی',
     'minutes_left_suffix': 'منٹ باقی',
+    'change_number_label': '✏️ موبائل نمبر تبدیل کریں',
   },
 };
 
@@ -1188,7 +1190,7 @@ class AlarmRingingScreen extends StatelessWidget {
                     MixedText(
                       name,
                       textAlign: TextAlign.center,
-                      style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
+                      style: const TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold),
                     ),
                     const SizedBox(height: 16),
                   ],
@@ -1257,6 +1259,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   List<Map<String, dynamic>> _scheduledItems = [];
   bool _loading = false;
   String? _fcmToken;
+  // Jab tak mobile number pehle se save nahi hai, tab tak number field
+  // dikhta hai. Login (verify) kamyaab hote hi ye field hat jaata hai aur
+  // sirf naam dikhta hai — number background mein save rehta hai.
+  bool _showMobileField = true;
   static const _screenChannel = MethodChannel('zahidiya.alarm/screen');
 
   Timer? _highlightRefreshTimer;
@@ -1411,6 +1417,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     final saved = prefs.getString('mobile');
     if (saved != null) {
       _mobileController.text = saved;
+      setState(() {
+        _showMobileField = false; // pehle se login hai, seedha naam dikhao
+      });
       // Number pehle se saved hai — matlab pehli baar "Set Alarms" pehle
       // ho chuka hai. Ab dobara app khulte hi (chahe naya APK update ho ya
       // phone restart ho) yeh khud-b-khud dobara register/refresh ho jaata
@@ -1452,6 +1461,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         });
         return;
       }
+      // Login kamyaab — ab number field hata kar sirf naam dikhao
+      setState(() {
+        _showMobileField = false;
+      });
       // Backend agar mureed ka naam bhejta hai (verify-mobile response mein
       // "name" field), to use save kar lete hain — alarm bajte waqt sabse
       // upar dikhane ke liye. Agar naam mein Urdu script nahi hai (i.e.
@@ -1553,32 +1566,61 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         padding: const EdgeInsets.all(20.0),
         child: Column(
           children: [
-            TextField(
-              controller: _mobileController,
-              keyboardType: TextInputType.phone,
-              decoration: InputDecoration(
-                labelText: tr('mobile_label'),
-                labelStyle: appFont(),
-                border: const OutlineInputBorder(),
+            if (_showMobileField) ...[
+              TextField(
+                controller: _mobileController,
+                keyboardType: TextInputType.phone,
+                decoration: InputDecoration(
+                  labelText: tr('mobile_label'),
+                  labelStyle: appFont(),
+                  border: const OutlineInputBorder(),
+                ),
               ),
-            ),
-            const SizedBox(height: 16),
-            ElevatedButton(
-              onPressed: _loading ? null : _fetchAndScheduleAlarms,
-              style: ElevatedButton.styleFrom(
-                padding: const EdgeInsets.symmetric(vertical: 14),
-                backgroundColor: Colors.green,
-                foregroundColor: Colors.white,
-                minimumSize: const Size(double.infinity, 48),
+              const SizedBox(height: 16),
+              ElevatedButton(
+                onPressed: _loading ? null : _fetchAndScheduleAlarms,
+                style: ElevatedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  backgroundColor: Colors.green,
+                  foregroundColor: Colors.white,
+                  minimumSize: const Size(double.infinity, 48),
+                ),
+                child: _loading
+                    ? const SizedBox(
+                        height: 20,
+                        width: 20,
+                        child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                      )
+                    : Text(tr('set_alarms_btn'), style: appFont()),
               ),
-              child: _loading
-                  ? const SizedBox(
-                      height: 20,
-                      width: 20,
-                      child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
-                    )
-                  : Text(tr('set_alarms_btn'), style: appFont()),
-            ),
+            ] else ...[
+              // Login ho chuka hai — number ki jagah sirf naam dikhta hai
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(vertical: 18, horizontal: 12),
+                decoration: BoxDecoration(
+                  border: Border.all(color: Colors.green, width: 1.5),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: MixedText(
+                  AppUser.displayName.trim().isNotEmpty ? AppUser.displayName : _mobileController.text,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.green),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Align(
+                alignment: Alignment.center,
+                child: TextButton(
+                  onPressed: () {
+                    setState(() {
+                      _showMobileField = true;
+                    });
+                  },
+                  child: Text(tr('change_number_label'), style: appFont(const TextStyle(fontSize: 13))),
+                ),
+              ),
+            ],
             const SizedBox(height: 10),
             OutlinedButton(
               onPressed: () async {
