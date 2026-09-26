@@ -214,11 +214,13 @@ Future<List<Map<String, dynamic>>> fetchAndScheduleForMobile(String mobile, {boo
         }
       }
     } catch (_) {}
+    final int fetchedEndMinutesBefore = (data['end_reminder_minutes_before'] as num?)?.toInt() ?? 0;
+    await AppConfig.saveEndMinutes(fetchedEndMinutesBefore);
     await _scheduleLocalAlarms(
       [...schedule, ...((data['extra_alarms'] as List?) ?? []), ...tomorrowSchedule, ...tomorrowExtra],
       startDuration: (data['start_alarm_duration_seconds'] as num?)?.toInt() ?? 60,
       endDuration: (data['end_reminder_beep_seconds'] as num?)?.toInt() ?? 20,
-      endMinutesBefore: (data['end_reminder_minutes_before'] as num?)?.toInt() ?? 0,
+      endMinutesBefore: fetchedEndMinutesBefore,
       force: force,
     );
   } catch (_) {}
@@ -605,6 +607,7 @@ Future<void> main() async {
 
   await AppLang.load();
   await AppUser.load();
+  await AppConfig.load();
   try {
     // Font ko pehle hi download/cache karke rakh do, taaki jab bhi user
     // Urdu par switch kare, turant sahi (Nastaliq) font dikhe — koi flash/farak na aaye.
@@ -762,6 +765,26 @@ Future<String?> _transliterateToUrdu(String englishText) async {
   } catch (_) {}
   return null;
 }
+// ---------- ADMIN SETTINGS CACHE (end-reminder minute count) ----------
+// "Kitne minute pehle namaz khatam hone ka reminder bajna hai" — admin ka
+// ye setting yahan cache karte hain, taaki jin end-alarm mein minute count
+// title ke saath nahi aata (jaise Isha, jo seedha server push se bajta hai,
+// ya kabhi koi bhi end-alarm backup push se bajay), unme bhi sahi minute
+// count dikha sakein — taaki HAR namaz ke end-alarm par minute count dikhe.
+class AppConfig {
+  static int endMinutesBefore = 0;
+  static Future<void> load() async {
+    final prefs = await SharedPreferences.getInstance();
+    endMinutesBefore = prefs.getInt('end_reminder_minutes_before_cache') ?? 0;
+  }
+  static Future<void> saveEndMinutes(int mins) async {
+    if (mins <= 0) return;
+    endMinutesBefore = mins;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt('end_reminder_minutes_before_cache', mins);
+  }
+}
+
 // Agar backend naam "English | اردو" format mein bheje (jaise "Syed Shabbir
 // | سید شبیر"), to wahi Urdu hissa dikhta hai (sabse accurate). Warna app
 // khud upar ki dictionary se best-effort Urdu transliteration bana leta hai.
@@ -806,7 +829,7 @@ const Map<String, Map<String, String>> kStrings = {
     'status_error_prefix': 'Internet or server issue: ',
     'lang_toggle': '🌐 اردو',
     'prayer_start_label': 'Start', 'prayer_end_label': 'End', 'active_now_label': '🟢 Now',
-    'minutes_left_suffix': 'minute baaki hai',
+    'minutes_left_suffix': 'minute mein',
     'change_number_label': '✏️ Change mobile number',
   },
   'ur': {
@@ -827,7 +850,7 @@ const Map<String, Map<String, String>> kStrings = {
     'status_error_prefix': 'انٹرنیٹ یا سرور میں مسئلہ: ',
     'lang_toggle': '🌐 English',
     'prayer_start_label': 'شروع', 'prayer_end_label': 'ختم', 'active_now_label': '🟢 ابھی',
-    'minutes_left_suffix': 'منٹ باقی',
+    'minutes_left_suffix': 'منٹ میں',
     'change_number_label': '✏️ موبائل نمبر تبدیل کریں',
   },
 };
@@ -951,7 +974,11 @@ String translateAlarmTitle(String title) {
   // Namaz "khatam hone wali hai" ka fixed backend title (minute count sath ho to wo bhi)
   final em = _endTitleRe.firstMatch(title);
   if (em != null) {
-    final mins = em.group(2) != null ? int.tryParse(em.group(2)!) : null;
+    int? mins = em.group(2) != null ? int.tryParse(em.group(2)!) : null;
+    // Title ke saath minute count na ho (jaise Isha ka end-alarm, jo seedha
+    // server push se bajta hai) to admin ki cached setting use kar lo, taaki
+    // HAR namaz ke end-alarm par minute count dikhe.
+    mins ??= AppConfig.endMinutesBefore > 0 ? AppConfig.endMinutesBefore : null;
     return prayerEndMessage(em.group(1)!, minutesLeft: mins);
   }
   if (AppLang.current != 'ur') return title;
