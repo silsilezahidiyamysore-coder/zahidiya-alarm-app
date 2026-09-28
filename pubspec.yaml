@@ -37,12 +37,7 @@ flutter:
   uses-material-design: true
   assets:
     - assets/icon/icon.png
-
-flutter:
   fonts:
     - family: AlMajeedQuranic
       fonts:
         - asset: fonts/AlMajeedQuranic.ttf
-
-
-        
