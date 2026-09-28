@@ -831,6 +831,12 @@ const Map<String, Map<String, String>> kStrings = {
     'prayer_start_label': 'Start', 'prayer_end_label': 'End', 'active_now_label': '🟢 Now',
     'minutes_left_suffix': 'minute mein',
     'change_number_label': '✏️ Change mobile number',
+    'quran_btn': '📖 Read Quran Majeed',
+    'quran_title': 'Quran Majeed',
+    'quran_loading': 'Loading Quran... (first time needs internet, after that it works offline)',
+    'quran_error': 'Could not load the Quran. Please check your internet and try again.',
+    'retry_btn': 'Try again',
+    'ayahs_word': 'ayahs',
   },
   'ur': {
     'app_title': 'سلسلہ زاہدیہ الارم',
@@ -852,6 +858,12 @@ const Map<String, Map<String, String>> kStrings = {
     'prayer_start_label': 'شروع', 'prayer_end_label': 'ختم', 'active_now_label': '🟢 ابھی',
     'minutes_left_suffix': 'منٹ میں',
     'change_number_label': '✏️ موبائل نمبر تبدیل کریں',
+    'quran_btn': '📖 قرآن مجید پڑھیں',
+    'quran_title': 'قرآن مجید',
+    'quran_loading': 'قرآن لوڈ ہو رہا ہے... (پہلی بار انٹرنیٹ چاہیے، اس کے بعد آف لائن بھی چلے گا)',
+    'quran_error': 'قرآن لوڈ نہیں ہو سکا۔ انٹرنیٹ چیک کر کے دوبارہ کوشش کریں۔',
+    'retry_btn': 'دوبارہ کوشش کریں',
+    'ayahs_word': 'آیات',
   },
 };
 
@@ -1021,6 +1033,38 @@ TextSpan mixedTextSpan(String text, TextStyle base) {
   return TextSpan(style: base, children: children);
 }
 
+// Sirf Quran ki ayat dikhane ke liye — "Al Majeed Quranic" font. Baaki app ka
+// koi bhi text (naam, namaz message, buttons) is se nahi badlega, wo apne
+// purane Nastaliq/normal font mein hi rahega. Istemal: QuranText('...ayat...')
+class QuranText extends StatelessWidget {
+  final String text;
+  final double fontSize;
+  final Color color;
+  final TextAlign textAlign;
+  const QuranText(
+    this.text, {
+    super.key,
+    this.fontSize = 26,
+    this.color = Colors.black,
+    this.textAlign = TextAlign.center,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      text,
+      textAlign: textAlign,
+      textDirection: TextDirection.rtl,
+      style: TextStyle(
+        fontFamily: 'AlMajeedQuranic',
+        fontSize: fontSize,
+        color: color,
+        height: 2.0,
+      ),
+    );
+  }
+}
+
 class MixedText extends StatelessWidget {
   final String text;
   final TextStyle? style;
@@ -1039,6 +1083,273 @@ class MixedText extends StatelessWidget {
 String trSetSuccess(int count) => AppLang.current == 'ur'
     ? '$count الارم سیٹ ہو گئے۔ اب روز خود بخود سیٹ ہوتے رہیں گے۔'
     : '$count alarm(s) set. They will now set automatically every day.';
+
+// ---------- QURAN MAJEED (poora Quran, Arabic mein) ----------
+// Quran ka text alquran.cloud (free, bina key ka) se ek baar download hota hai
+// aur phone mein save ho jaata hai — uske baad bina internet ke bhi chalta hai.
+// Text koi hum khud nahi likhte, seedha wahin se aata hai taaki ek bhi harf
+// galat na ho. Sirf yahi screens "AlMajeedQuranic" font use karti hain; baaki
+// app ka koi text is se nahi badalta.
+const String quranApiUrl = 'https://api.alquran.cloud/v1/quran/quran-uthmani';
+
+class QuranData {
+  static List<dynamic>? _surahs;
+
+  static Future<File> _cacheFile() async {
+    final dir = await getApplicationDocumentsDirectory();
+    return File('${dir.path}/quran_uthmani_v1.json');
+  }
+
+  static List<dynamic>? _parse(String body) {
+    final data = jsonDecode(body);
+    if (data is Map && data['code'] == 200) {
+      final surahs = data['data']['surahs'];
+      if (surahs is List && surahs.length == 114) return surahs;
+    }
+    return null;
+  }
+
+  static Future<List<dynamic>> load() async {
+    if (_surahs != null) return _surahs!;
+    final file = await _cacheFile();
+    if (await file.exists()) {
+      try {
+        final parsed = _parse(await file.readAsString());
+        if (parsed != null) {
+          _surahs = parsed;
+          return parsed;
+        }
+      } catch (_) {}
+    }
+    final res = await http.get(Uri.parse(quranApiUrl)).timeout(const Duration(seconds: 90));
+    if (res.statusCode != 200) {
+      throw Exception('Server status ${res.statusCode}');
+    }
+    final body = utf8.decode(res.bodyBytes);
+    final parsed = _parse(body);
+    if (parsed == null) throw Exception('Invalid Quran data');
+    await file.writeAsString(body);
+    _surahs = parsed;
+    return parsed;
+  }
+}
+
+// Harkat/nishan hata kar sirf bunyadi harf rakhta hai (bismillah pehchanne ke liye)
+String _plainArabic(String s) {
+  final b = StringBuffer();
+  for (final r in s.runes) {
+    if ((r >= 0x064B && r <= 0x065F) || r == 0x0670 || r == 0x0640 || (r >= 0x06D6 && r <= 0x06ED)) continue;
+    if (r == 0x0671) { b.writeCharCode(0x0627); continue; }
+    if (r == 0x0649) { b.writeCharCode(0x064A); continue; }
+    b.writeCharCode(r);
+  }
+  return b.toString();
+}
+
+// Kuch editions mein har surah ki pehli ayat ke aage bismillah judi hoti hai —
+// use alag header ki tarah dikhane ke liye yahan se hata dete hain.
+String _stripBismillah(String text) {
+  final words = text.split(' ');
+  if (words.length > 4 && _plainArabic(words.take(4).join(' ')) == 'بسم الله الرحمن الرحيم') {
+    return words.skip(4).join(' ').trim();
+  }
+  return text;
+}
+
+String _arabicDigits(int n) =>
+    n.toString().split('').map((d) => String.fromCharCode(0x0660 + int.parse(d))).join();
+
+class _AyahNumber extends StatelessWidget {
+  final int n;
+  const _AyahNumber(this.n);
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 4),
+      width: 36,
+      height: 36,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        border: Border.all(color: Colors.green, width: 1.5),
+      ),
+      child: Text(
+        _arabicDigits(n),
+        style: const TextStyle(fontSize: 12, color: Colors.green, fontWeight: FontWeight.bold),
+      ),
+    );
+  }
+}
+
+// 114 surahon ki list
+class QuranListScreen extends StatefulWidget {
+  const QuranListScreen({super.key});
+
+  @override
+  State<QuranListScreen> createState() => _QuranListScreenState();
+}
+
+class _QuranListScreenState extends State<QuranListScreen> {
+  late Future<List<dynamic>> _future;
+
+  @override
+  void initState() {
+    super.initState();
+    _future = QuranData.load();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(tr('quran_title'), style: appFont()),
+        backgroundColor: Colors.green,
+        foregroundColor: Colors.white,
+      ),
+      body: FutureBuilder<List<dynamic>>(
+        future: _future,
+        builder: (context, snap) {
+          if (snap.connectionState != ConnectionState.done) {
+            return Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const CircularProgressIndicator(color: Colors.green),
+                    const SizedBox(height: 16),
+                    Text(tr('quran_loading'), textAlign: TextAlign.center, style: appFont()),
+                  ],
+                ),
+              ),
+            );
+          }
+          if (snap.hasError || snap.data == null) {
+            return Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(tr('quran_error'), textAlign: TextAlign.center, style: appFont()),
+                    const SizedBox(height: 16),
+                    ElevatedButton(
+                      onPressed: () {
+                        setState(() {
+                          _future = QuranData.load();
+                        });
+                      },
+                      style: ElevatedButton.styleFrom(backgroundColor: Colors.green, foregroundColor: Colors.white),
+                      child: Text(tr('retry_btn'), style: appFont()),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          }
+          final surahs = snap.data!;
+          // Bismillah pehli surah (Fatiha) ki pehli ayat se lete hain — usi edition ka exact text
+          final String bismillah = (surahs[0]['ayahs'][0]['text'] ?? '').toString();
+          return ListView.separated(
+            itemCount: surahs.length,
+            separatorBuilder: (_, __) => const Divider(height: 1),
+            itemBuilder: (context, i) {
+              final s = surahs[i] as Map<String, dynamic>;
+              return ListTile(
+                leading: CircleAvatar(
+                  backgroundColor: Colors.green,
+                  foregroundColor: Colors.white,
+                  child: Text('${s['number']}', style: const TextStyle(fontSize: 14)),
+                ),
+                title: Text('${s['englishName']}', style: const TextStyle(fontWeight: FontWeight.w600)),
+                subtitle: Text('${s['numberOfAyahs']} ${tr('ayahs_word')}', style: appFont(const TextStyle(fontSize: 12))),
+                trailing: QuranText('${s['name']}', fontSize: 22, textAlign: TextAlign.right),
+                onTap: () {
+                  Navigator.of(context).push(MaterialPageRoute(
+                    builder: (_) => SurahScreen(surah: s, bismillah: bismillah),
+                  ));
+                },
+              );
+            },
+          );
+        },
+      ),
+    );
+  }
+}
+
+// Ek surah ki saari ayaat
+class SurahScreen extends StatefulWidget {
+  final Map<String, dynamic> surah;
+  final String bismillah;
+  const SurahScreen({super.key, required this.surah, required this.bismillah});
+
+  @override
+  State<SurahScreen> createState() => _SurahScreenState();
+}
+
+class _SurahScreenState extends State<SurahScreen> {
+  double _size = 28;
+
+  @override
+  Widget build(BuildContext context) {
+    final int surahNo = (widget.surah['number'] as num).toInt();
+    final List ayahs = widget.surah['ayahs'] as List;
+    // Surah 1 (Fatiha) mein bismillah khud pehli ayat hai, aur surah 9 (Tauba) mein hoti hi nahi
+    final bool showBismillah = surahNo != 1 && surahNo != 9;
+    return Scaffold(
+      appBar: AppBar(
+        title: QuranText('${widget.surah['name']}', fontSize: 22, color: Colors.white),
+        backgroundColor: Colors.green,
+        iconTheme: const IconThemeData(color: Colors.white),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.text_decrease),
+            onPressed: () => setState(() => _size = (_size - 2).clamp(20, 52).toDouble()),
+          ),
+          IconButton(
+            icon: const Icon(Icons.text_increase),
+            onPressed: () => setState(() => _size = (_size + 2).clamp(20, 52).toDouble()),
+          ),
+        ],
+      ),
+      body: ListView.builder(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
+        itemCount: ayahs.length + (showBismillah ? 1 : 0),
+        itemBuilder: (context, i) {
+          if (showBismillah && i == 0) {
+            return Padding(
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              child: QuranText(widget.bismillah, fontSize: _size + 2),
+            );
+          }
+          final int idx = showBismillah ? i - 1 : i;
+          final a = ayahs[idx];
+          String text = a['text'].toString();
+          if (showBismillah && idx == 0) text = _stripBismillah(text);
+          final int n = (a['numberInSurah'] as num).toInt();
+          return Padding(
+            padding: const EdgeInsets.symmetric(vertical: 6),
+            child: Directionality(
+              textDirection: TextDirection.rtl,
+              child: Text.rich(
+                TextSpan(
+                  style: TextStyle(fontFamily: 'AlMajeedQuranic', fontSize: _size, height: 2.2, color: Colors.black87),
+                  children: [
+                    TextSpan(text: '$text '),
+                    WidgetSpan(alignment: PlaceholderAlignment.middle, child: _AyahNumber(n)),
+                  ],
+                ),
+                textAlign: TextAlign.justify,
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
 
 class ZahidiyaAlarmApp extends StatelessWidget {
   const ZahidiyaAlarmApp({super.key});
@@ -1667,6 +1978,16 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 minimumSize: const Size(double.infinity, 44),
               ),
               child: Text(tr('overlay_btn'), style: appFont()),
+            ),
+            const SizedBox(height: 10),
+            OutlinedButton(
+              onPressed: () {
+                Navigator.of(context).push(MaterialPageRoute(builder: (_) => const QuranListScreen()));
+              },
+              style: OutlinedButton.styleFrom(
+                minimumSize: const Size(double.infinity, 44),
+              ),
+              child: Text(tr('quran_btn'), style: appFont()),
             ),
             const SizedBox(height: 16),
             Text(
