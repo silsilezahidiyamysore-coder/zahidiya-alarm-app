@@ -37,3 +37,12 @@ flutter:
   uses-material-design: true
   assets:
     - assets/icon/icon.png
+
+# pubspec.yaml mein "flutter:" section ke andar ye add karo
+# (indentation/spaces bilkul isi tarah rakhna):
+
+flutter:
+  fonts:
+    - family: AlMajeedQuranic
+      fonts:
+        - asset: fonts/AlMajeedQuranic.ttf
