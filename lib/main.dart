@@ -326,8 +326,6 @@ Future<void> _scheduleLocalAlarms(
       int duration = startDuration;
       String category = 'namaz';
       if (type == 'end_reminder') {
-        // Isha ka end alarm pehle jaisa server push se hi chalega
-        if (title.contains('Isha')) continue;
         at = at.subtract(Duration(minutes: endMinutesBefore));
         duration = endDuration;
         // Kitne minute mein namaz khatam ho rahi hai, ye title ke saath jod
