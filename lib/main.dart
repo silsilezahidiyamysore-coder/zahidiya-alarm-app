@@ -21,7 +21,6 @@ import 'package:url_launcher/url_launcher.dart';
 const String scheduleUrlBase = 'https://zahidiya-mysore.pages.dev/api/get-alarm-schedule';
 const String saveFcmTokenUrl = 'https://zahidiya-mysore.pages.dev/api/save-fcm-token';
 const String websiteUrl = 'https://zahidiya-mysore.pages.dev';
-const String dailySyncTaskName = 'zahidiyaDailyAlarmSync';
 
 String currentUserRole = 'mureed';
 String currentUserName = '';
@@ -431,7 +430,6 @@ Future<void> main() async {
   await AppUser.load();
   await AppConfig.load();
 
-  // ===== Sabhi fonts pre-load karo — Arabic (Quran), Urdu (Nastaliq) =====
   try {
     await GoogleFonts.pendingFonts([
       GoogleFonts.notoNastaliqUrdu(),
@@ -445,17 +443,20 @@ Future<void> main() async {
 
 final navigatorKey = GlobalKey<NavigatorState>();
 
-// ---------- LANGUAGE ----------
+// ---------- LANGUAGE (with ValueNotifier for rebuild) ----------
 class AppLang {
   static String current = 'ur';
+  static final ValueNotifier<int> notifier = ValueNotifier(0);
   static Future<void> load() async {
     final prefs = await SharedPreferences.getInstance();
     current = prefs.getString('app_lang') ?? 'ur';
+    notifier.value++;
   }
   static Future<void> toggle() async {
     current = current == 'ur' ? 'en' : 'ur';
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('app_lang', current);
+    notifier.value++;
   }
 }
 
@@ -527,6 +528,7 @@ class AppUser {
     currentUserMobile = prefs.getString('mobile') ?? '';
     currentUserPassword = prefs.getString('password') ?? '';
     currentUserRole = prefs.getString('role') ?? 'mureed';
+    currentUserName = name;
   }
   static Future<void> save(String newName) async {
     name = newName;
@@ -554,6 +556,7 @@ const Map<String, Map<String, String>> kStrings = {
     'prayer_start_label': 'Start', 'prayer_end_label': 'End', 'active_now_label': '🟢 Now',
     'minutes_left_suffix': 'minute mein', 'change_number_label': '✏️ Change mobile number',
     'tab_home': '🏠 Home', 'tab_website': '🌐 Website', 'tab_admin': '⚙️ Admin',
+    'password_label': 'Password',
   },
   'ur': {
     'app_title': 'سلسلہ زاہدیہ الارم', 'mobile_label': 'موبائل نمبر',
@@ -572,6 +575,7 @@ const Map<String, Map<String, String>> kStrings = {
     'prayer_start_label': 'شروع', 'prayer_end_label': 'ختم', 'active_now_label': '🟢 ابھی',
     'minutes_left_suffix': 'منٹ میں', 'change_number_label': '✏️ موبائل نمبر تبدیل کریں',
     'tab_home': '🏠 ہوم', 'tab_website': '🌐 ویب سائٹ', 'tab_admin': '⚙️ ایڈمن',
+    'password_label': 'پاس ورڈ',
   },
 };
 
@@ -704,7 +708,7 @@ class ZahidiyaAlarmApp extends StatelessWidget {
 }
 
 // ============================================================
-// ============ MAIN TAB SCREEN (Home + Website + Admin) ======
+// ============ MAIN TAB SCREEN ===============================
 // ============================================================
 
 class MainTabScreen extends StatefulWidget {
@@ -723,17 +727,27 @@ class _MainTabScreenState extends State<MainTabScreen> {
   void initState() {
     super.initState();
     _initWebView();
+    AppLang.notifier.addListener(_onLangChanged);
+  }
+
+  @override
+  void dispose() {
+    AppLang.notifier.removeListener(_onLangChanged);
+    super.dispose();
+  }
+
+  void _onLangChanged() {
+    if (mounted) setState(() {});
   }
 
   void _initWebView() {
     _webController = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
-      ..setBackgroundColor(Colors.white)
+      ..setBackgroundColor(const Color(0xFF0F3D2E))
       ..setNavigationDelegate(NavigationDelegate(
         onPageStarted: (url) => setState(() => _webLoading = true),
         onPageFinished: (url) async {
           setState(() => _webLoading = false);
-          // ===== Website load hone par login sync karo =====
           await _syncLoginToWebView();
         },
         onNavigationRequest: (request) {
@@ -755,8 +769,6 @@ class _MainTabScreenState extends State<MainTabScreen> {
       ..loadRequest(Uri.parse(websiteUrl));
   }
 
-  // ===== App ka login WebView ke localStorage mein daalo =====
-  // Taaki website auto-login kar le — user ko dobara login nahi karna pade
   Future<void> _syncLoginToWebView() async {
     if (_loginSynced) return;
     final prefs = await SharedPreferences.getInstance();
@@ -782,7 +794,6 @@ class _MainTabScreenState extends State<MainTabScreen> {
     } catch (_) {}
   }
 
-  // ===== Website reload par bhi sync =====
   Future<void> _syncLoginNow() async {
     final prefs = await SharedPreferences.getInstance();
     final mobile = prefs.getString('mobile') ?? '';
@@ -859,7 +870,6 @@ class _MainTabScreenState extends State<MainTabScreen> {
             onTap: (i) {
               setState(() => _currentIndex = i);
               if (i == 1 || i == 2) {
-                // Login sync karo phir load karo
                 _syncLoginNow().then((_) {
                   final url = (i == 2) ? '$websiteUrl/admin.html' : websiteUrl;
                   _webController?.loadRequest(Uri.parse(url));
@@ -883,13 +893,21 @@ class _MainTabScreenState extends State<MainTabScreen> {
   }
 
   Widget _buildWebViewScreen() {
-    return Stack(
-      children: [
-        if (_webController != null) WebViewWidget(controller: _webController!),
-        if (_webLoading) const Center(child: CircularProgressIndicator()),
-        Positioned(
-          top: 40, left: 8,
-          child: SafeArea(
+    // SafeArea ensures header doesn't go behind status bar
+    return SafeArea(
+      top: true,
+      bottom: false,
+      child: Stack(
+        children: [
+          if (_webController != null) WebViewWidget(controller: _webController!),
+          if (_webLoading)
+            const Positioned.fill(
+              child: Center(
+                child: CircularProgressIndicator(color: Colors.green),
+              ),
+            ),
+          Positioned(
+            top: 8, left: 8,
             child: Material(
               color: Colors.black54,
               borderRadius: BorderRadius.circular(20),
@@ -908,8 +926,8 @@ class _MainTabScreenState extends State<MainTabScreen> {
               ),
             ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }
@@ -1075,7 +1093,7 @@ class AlarmRingingScreen extends StatelessWidget {
 }
 
 // ============================================================
-// ============ HOME SCREEN (Alarm) ==========================
+// ============ HOME SCREEN ===================================
 // ============================================================
 
 class HomeScreen extends StatefulWidget {
@@ -1149,6 +1167,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     _requestPermissions();
     _loadSavedMobile();
     _setupFCM();
+    AppLang.notifier.addListener(_onLangChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final ringing = Alarm.ringing.value;
       if (ringing.alarms.isNotEmpty) _openRingingScreen(ringing.alarms.first.notificationSettings.body);
@@ -1176,11 +1195,16 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     });
   }
 
+  void _onLangChanged() {
+    if (mounted) setState(() {});
+  }
+
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _highlightRefreshTimer?.cancel();
     _ringingSub?.cancel();
+    AppLang.notifier.removeListener(_onLangChanged);
     super.dispose();
   }
 
@@ -1222,6 +1246,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     if (saved != null) {
       _mobileController.text = saved;
       _passwordController.text = prefs.getString('password') ?? '';
+      currentUserRole = prefs.getString('role') ?? 'mureed';
       setState(() => _showMobileField = false);
       _fetchAndScheduleAlarms();
     }
@@ -1302,7 +1327,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         if (items.isNotEmpty) { _statusKind = 'success'; _statusCount = items.length; }
         else _statusKind = 'no_alarms_left';
       });
-      // Role change hone par MainTabScreen ko refresh karo
       if (mounted) {
         (context.findAncestorStateOfType<_MainTabScreenState>())?.setState(() {});
       }
@@ -1351,7 +1375,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               TextField(
                 controller: _passwordController,
                 obscureText: true,
-                decoration: const InputDecoration(labelText: 'Password', border: OutlineInputBorder()),
+                decoration: InputDecoration(labelText: tr('password_label'), labelStyle: appFont(), border: const OutlineInputBorder()),
               ),
               const SizedBox(height: 16),
               ElevatedButton(
