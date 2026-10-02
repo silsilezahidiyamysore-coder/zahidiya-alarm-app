@@ -18,46 +18,35 @@ import 'package:android_intent_plus/flag.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-const String scheduleUrlBase =
-    'https://zahidiya-mysore.pages.dev/api/get-alarm-schedule';
-const String saveFcmTokenUrl =
-    'https://zahidiya-mysore.pages.dev/api/save-fcm-token';
+const String scheduleUrlBase = 'https://zahidiya-mysore.pages.dev/api/get-alarm-schedule';
+const String saveFcmTokenUrl = 'https://zahidiya-mysore.pages.dev/api/save-fcm-token';
 const String websiteUrl = 'https://zahidiya-mysore.pages.dev';
 const String dailySyncTaskName = 'zahidiyaDailyAlarmSync';
 
-// ============ GLOBAL USER INFO ============
-String currentUserRole = 'mureed'; // 'admin' ya 'mureed'
+String currentUserRole = 'mureed';
 String currentUserName = '';
+String currentUserMobile = '';
+String currentUserPassword = '';
 
-// ============ RINGTONE FILE HELPERS ============
+// ============ RINGTONE HELPERS ============
 String _toneFileName(String category) {
   switch (category) {
-    case 'event':
-      return 'event_alarm_tone.mp3';
-    case 'live':
-      return 'live_alarm_tone.mp3';
-    case 'custom':
-      return 'custom_alarm_tone_dedicated.mp3';
-    default:
-      return 'custom_alarm_tone.mp3';
+    case 'event': return 'event_alarm_tone.mp3';
+    case 'live': return 'live_alarm_tone.mp3';
+    case 'custom': return 'custom_alarm_tone_dedicated.mp3';
+    default: return 'custom_alarm_tone.mp3';
   }
 }
-
 String _tonePrefKey(String category) {
   switch (category) {
-    case 'event':
-      return 'cached_tone_url_event';
-    case 'live':
-      return 'cached_tone_url_live';
-    case 'custom':
-      return 'cached_tone_url_custom';
-    default:
-      return 'cached_tone_url';
+    case 'event': return 'cached_tone_url_event';
+    case 'live': return 'cached_tone_url_live';
+    case 'custom': return 'cached_tone_url_custom';
+    default: return 'cached_tone_url';
   }
 }
 
-Future<String?> _getLocalTonePath(String? toneUrl,
-    [String category = 'namaz']) async {
+Future<String?> _getLocalTonePath(String? toneUrl, [String category = 'namaz']) async {
   if (toneUrl == null || toneUrl.isEmpty) return null;
   try {
     final dir = await getApplicationDocumentsDirectory();
@@ -65,8 +54,7 @@ Future<String?> _getLocalTonePath(String? toneUrl,
     final prefs = await SharedPreferences.getInstance();
     final savedUrl = prefs.getString(_tonePrefKey(category));
     if (savedUrl == toneUrl && await file.exists()) return file.path;
-    final response =
-        await http.get(Uri.parse(toneUrl)).timeout(const Duration(seconds: 20));
+    final response = await http.get(Uri.parse(toneUrl)).timeout(const Duration(seconds: 20));
     if (response.statusCode == 200) {
       await file.writeAsBytes(response.bodyBytes);
       await prefs.setString(_tonePrefKey(category), toneUrl);
@@ -82,10 +70,8 @@ Future<String?> _getLocalTonePath(String? toneUrl,
   return null;
 }
 
-final RegExp _startTitleRe =
-    RegExp(r'^(Fajr|Dhuhr|Asr|Maghrib|Isha) ki namaz ka waqt ho gaya hai$');
-final RegExp _endTitleRe = RegExp(
-    r'^(?:⏳ )?(Fajr|Dhuhr|Asr|Maghrib|Isha) ki namaz khatam hone wali hai(?:\s*\((\d+)\s*min\))?$');
+final RegExp _startTitleRe = RegExp(r'^(Fajr|Dhuhr|Asr|Maghrib|Isha) ki namaz ka waqt ho gaya hai$');
+final RegExp _endTitleRe = RegExp(r'^(?:⏳ )?(Fajr|Dhuhr|Asr|Maghrib|Isha) ki namaz khatam hone wali hai(?:\s*\((\d+)\s*min\))?$');
 
 Future<void> _showAlarmOverlay(String title, int seconds) async {
   try {
@@ -98,8 +84,7 @@ Future<void> _showAlarmOverlay(String title, int seconds) async {
   } catch (_) {}
 }
 
-Future<void> _scheduleOverlay(
-    int id, DateTime at, String title, int seconds) async {
+Future<void> _scheduleOverlay(int id, DateTime at, String title, int seconds) async {
   try {
     final intent = AndroidIntent(
       action: 'com.zahidiya.alarm.SCHEDULE_OVERLAY',
@@ -134,8 +119,7 @@ int idFromString(String s) {
   return hash % 1000000;
 }
 
-Future<void> _scheduleStopAlarm(
-    int alarmId, DateTime ringAt, int durationSeconds) async {
+Future<void> _scheduleStopAlarm(int alarmId, DateTime ringAt, int durationSeconds) async {
   final stopAt = ringAt.add(Duration(seconds: durationSeconds));
   final delay = stopAt.difference(DateTime.now());
   if (delay.isNegative) return;
@@ -148,16 +132,13 @@ Future<void> _scheduleStopAlarm(
   );
 }
 
-Future<List<Map<String, dynamic>>> fetchAndScheduleForMobile(String mobile,
-    {bool force = false}) async {
+Future<List<Map<String, dynamic>>> fetchAndScheduleForMobile(String mobile, {bool force = false}) async {
   await Alarm.init();
   final uri = Uri.parse('$scheduleUrlBase?mobile=$mobile');
   final response = await http.get(uri).timeout(const Duration(seconds: 25));
-  if (response.statusCode != 200)
-    throw Exception('Server status ${response.statusCode}');
+  if (response.statusCode != 200) throw Exception('Server status ${response.statusCode}');
   final data = jsonDecode(response.body);
-  if (data['success'] != true)
-    throw Exception(data['message'] ?? 'Unknown error');
+  if (data['success'] != true) throw Exception(data['message'] ?? 'Unknown error');
 
   final List<dynamic> schedule = data['schedule'] ?? [];
   await _getLocalTonePath(data['tone_url']);
@@ -170,11 +151,8 @@ Future<List<Map<String, dynamic>>> fetchAndScheduleForMobile(String mobile,
     List<dynamic> tomorrowExtra = [];
     try {
       final t = DateTime.now().add(const Duration(days: 1));
-      final dStr =
-          '${t.year}-${t.month.toString().padLeft(2, '0')}-${t.day.toString().padLeft(2, '0')}';
-      final r2 = await http
-          .get(Uri.parse('$scheduleUrlBase?mobile=$mobile&date=$dStr'))
-          .timeout(const Duration(seconds: 25));
+      final dStr = '${t.year}-${t.month.toString().padLeft(2, '0')}-${t.day.toString().padLeft(2, '0')}';
+      final r2 = await http.get(Uri.parse('$scheduleUrlBase?mobile=$mobile&date=$dStr')).timeout(const Duration(seconds: 25));
       if (r2.statusCode == 200) {
         final d2 = jsonDecode(r2.body);
         if (d2['success'] == true) {
@@ -183,16 +161,10 @@ Future<List<Map<String, dynamic>>> fetchAndScheduleForMobile(String mobile,
         }
       }
     } catch (_) {}
-    final int fetchedEndMinutesBefore =
-        (data['end_reminder_minutes_before'] as num?)?.toInt() ?? 0;
+    final int fetchedEndMinutesBefore = (data['end_reminder_minutes_before'] as num?)?.toInt() ?? 0;
     await AppConfig.saveEndMinutes(fetchedEndMinutesBefore);
     await _scheduleLocalAlarms(
-      [
-        ...schedule,
-        ...((data['extra_alarms'] as List?) ?? []),
-        ...tomorrowSchedule,
-        ...tomorrowExtra
-      ],
+      [...schedule, ...((data['extra_alarms'] as List?) ?? []), ...tomorrowSchedule, ...tomorrowExtra],
       startDuration: (data['start_alarm_duration_seconds'] as num?)?.toInt() ?? 60,
       endDuration: (data['end_reminder_beep_seconds'] as num?)?.toInt() ?? 20,
       endMinutesBefore: fetchedEndMinutesBefore,
@@ -206,15 +178,12 @@ Future<List<Map<String, dynamic>>> fetchAndScheduleForMobile(String mobile,
     final String title = item['title'];
     final DateTime dt = DateTime.parse(item['dateTime']).toLocal();
     DateTime? realEndDt;
-    if (item['realEndDateTime'] != null)
-      realEndDt = DateTime.parse(item['realEndDateTime']).toLocal();
+    if (item['realEndDateTime'] != null) realEndDt = DateTime.parse(item['realEndDateTime']).toLocal();
     final DateTime relevantUntil = realEndDt ?? dt;
-    final bool isPrayerItem =
-        _startTitleRe.hasMatch(title) || _endTitleRe.hasMatch(title);
+    final bool isPrayerItem = _startTitleRe.hasMatch(title) || _endTitleRe.hasMatch(title);
     if (relevantUntil.isBefore(now) && !isPrayerItem) continue;
     shownItems.add({
-      'title': title,
-      'time': dt,
+      'title': title, 'time': dt,
       if (realEndDt != null) 'realEndTime': realEndDt,
       if (item['contentType'] != null) 'contentType': item['contentType'],
       if (item['contentText'] != null) 'contentText': item['contentText'],
@@ -243,22 +212,17 @@ Future<void> _stopRingingOnly() async {
     final now = DateTime.now();
     final all = await Alarm.getAlarms();
     for (final a in all) {
-      if (!a.dateTime.isAfter(now) || await Alarm.isRinging(a.id))
-        await Alarm.stop(a.id);
+      if (!a.dateTime.isAfter(now) || await Alarm.isRinging(a.id)) await Alarm.stop(a.id);
     }
   } catch (_) {
-    try {
-      await Alarm.stopAll();
-    } catch (_) {}
+    try { await Alarm.stopAll(); } catch (_) {}
   }
 }
 
 const String _kLocalAlarmRecords = 'local_alarm_records_v1';
 
-String _normTitle(String t) => t
-    .replaceAll('\u23F3', '')
-    .replaceAll(RegExp(r'\s*\(\d+ min\)\s*$'), '')
-    .trim();
+String _normTitle(String t) =>
+    t.replaceAll('\u23F3', '').replaceAll(RegExp(r'\s*\(\d+ min\)\s*$'), '').trim();
 
 Future<void> _scheduleLocalAlarms(
   List<dynamic> schedule, {
@@ -283,53 +247,34 @@ Future<void> _scheduleLocalAlarms(
       if (type == 'end_reminder') {
         at = at.subtract(Duration(minutes: endMinutesBefore));
         duration = endDuration;
-        if (endMinutesBefore > 0 && !title.contains('('))
-          title = '$title ($endMinutesBefore min)';
-      } else if (type == 'event') {
-        category = 'event';
-      } else if (type == 'custom_alarm') {
-        category = 'custom';
-      } else if (type == 'event_end') {
-        category = 'event';
-        duration = endDuration;
-      } else if (type == 'custom_alarm_end') {
-        category = 'custom';
-        duration = endDuration;
-      }
+        if (endMinutesBefore > 0 && !title.contains('(')) title = '$title ($endMinutesBefore min)';
+      } else if (type == 'event') { category = 'event'; }
+      else if (type == 'custom_alarm') { category = 'custom'; }
+      else if (type == 'event_end') { category = 'event'; duration = endDuration; }
+      else if (type == 'custom_alarm_end') { category = 'custom'; duration = endDuration; }
 
       if (!at.isAfter(now.add(const Duration(seconds: 20)))) continue;
       if (at.isAfter(now.add(const Duration(hours: 50)))) continue;
 
       final int id = idFromString('local_${type}_${raw['id']}');
       newIds.add(id);
-      newRecords.add({
-        'id': id,
-        'title': _normTitle(title),
-        'at': at.millisecondsSinceEpoch
-      });
+      newRecords.add({'id': id, 'title': _normTitle(title), 'at': at.millisecondsSinceEpoch});
       await _scheduleOverlay(id, at, translateAlarmTitle(title), duration);
 
       if (!force) {
         final existing = await Alarm.getAlarm(id);
-        if (existing != null &&
-            existing.dateTime.difference(at).abs() < const Duration(seconds: 2))
-          continue;
+        if (existing != null && existing.dateTime.difference(at).abs() < const Duration(seconds: 2)) continue;
       }
       final localTonePath = await _getCachedTonePathOnly(category);
       await Alarm.set(
         alarmSettings: AlarmSettings(
-          id: id,
-          dateTime: at,
-          assetAudioPath: localTonePath,
-          loopAudio: true,
-          vibrate: true,
-          warningNotificationOnKill: false,
+          id: id, dateTime: at, assetAudioPath: localTonePath,
+          loopAudio: true, vibrate: true, warningNotificationOnKill: false,
           androidFullScreenIntent: true,
           volumeSettings: VolumeSettings.fixed(volume: 1.0),
           notificationSettings: NotificationSettings(
             title: 'Silsila-e-Zahidiya Alarm',
-            body: translateAlarmTitle(title),
-            stopButton: 'Band Karo',
+            body: translateAlarmTitle(title), stopButton: 'Band Karo',
           ),
         ),
       );
@@ -346,8 +291,7 @@ Future<void> _scheduleLocalAlarms(
         if (!newIds.contains(oid) && oat.isAfter(now)) {
           await Alarm.stop(oid);
           await _cancelOverlay(oid);
-        } else if (!newIds.contains(oid) &&
-            now.difference(oat) < const Duration(minutes: 15)) {
+        } else if (!newIds.contains(oid) && now.difference(oat) < const Duration(minutes: 15)) {
           newRecords.add(Map<String, dynamic>.from(r as Map));
         }
       }
@@ -368,57 +312,41 @@ Future<bool> _localAlarmAlreadyHandled(String title) async {
       if (r['title'] != wanted) continue;
       final at = DateTime.fromMillisecondsSinceEpoch(r['at'] as int);
       final diff = now.difference(at);
-      if (diff >= const Duration(seconds: -120) &&
-          diff <= const Duration(minutes: 5)) return true;
+      if (diff >= const Duration(seconds: -120) && diff <= const Duration(minutes: 5)) return true;
     }
   } catch (_) {}
   return false;
 }
 
-Future<void> triggerImmediateAlarm(String title,
-    {int durationSeconds = 60,
-    String category = 'namaz',
-    bool showOverlay = true}) async {
+Future<void> triggerImmediateAlarm(String title, {int durationSeconds = 60, String category = 'namaz', bool showOverlay = true}) async {
   if (category != 'live' && await _localAlarmAlreadyHandled(title)) return;
-  try {
-    await WakelockPlus.enable();
-  } catch (_) {}
+  try { await WakelockPlus.enable(); } catch (_) {}
   await Alarm.init();
   final DateTime ringAt = DateTime.now().add(const Duration(seconds: 2));
   final int alarmId = idFromString('live_${DateTime.now().millisecondsSinceEpoch}');
   final localTonePath = await _getCachedTonePathOnly(category);
   await Alarm.set(
     alarmSettings: AlarmSettings(
-      id: alarmId,
-      dateTime: ringAt,
-      assetAudioPath: localTonePath,
-      loopAudio: true,
-      vibrate: true,
-      warningNotificationOnKill: false,
+      id: alarmId, dateTime: ringAt, assetAudioPath: localTonePath,
+      loopAudio: true, vibrate: true, warningNotificationOnKill: false,
       androidFullScreenIntent: true,
       volumeSettings: VolumeSettings.fixed(volume: 1.0),
       notificationSettings: NotificationSettings(
         title: 'Silsila-e-Zahidiya Alarm',
-        body: translateAlarmTitle(title),
-        stopButton: 'Band Karo',
+        body: translateAlarmTitle(title), stopButton: 'Band Karo',
       ),
     ),
   );
   await _scheduleStopAlarm(alarmId, ringAt, durationSeconds);
-  if (showOverlay)
-    await _showAlarmOverlay(translateAlarmTitle(title), durationSeconds);
+  if (showOverlay) await _showAlarmOverlay(translateAlarmTitle(title), durationSeconds);
 }
 
 String _titleFromMessage(fcm.RemoteMessage message) {
-  return message.notification?.title ??
-      message.data['title'] ??
-      'Live Shuru Ho Gaya';
+  return message.notification?.title ?? message.data['title'] ?? 'Live Shuru Ho Gaya';
 }
-
 int _durationFromMessage(fcm.RemoteMessage message) {
   return int.tryParse(message.data['duration']?.toString() ?? '') ?? 60;
 }
-
 String _categoryFromMessage(fcm.RemoteMessage message) {
   return message.data['category']?.toString() ?? 'namaz';
 }
@@ -440,14 +368,11 @@ Future<void> firebaseMessagingBackgroundHandler(fcm.RemoteMessage message) async
     try {
       final prefs = await SharedPreferences.getInstance();
       final mobile = prefs.getString('mobile');
-      if (mobile != null && mobile.isNotEmpty)
-        await fetchAndScheduleForMobile(mobile, force: true);
+      if (mobile != null && mobile.isNotEmpty) await fetchAndScheduleForMobile(mobile, force: true);
     } catch (e) {}
     return;
   }
-  await triggerImmediateAlarm(_titleFromMessage(message),
-      durationSeconds: _durationFromMessage(message),
-      category: _categoryFromMessage(message));
+  await triggerImmediateAlarm(_titleFromMessage(message), durationSeconds: _durationFromMessage(message), category: _categoryFromMessage(message));
 }
 
 @pragma('vm:entry-point')
@@ -458,9 +383,7 @@ void callbackDispatcher() {
         await Alarm.init();
         final id = inputData?['alarmId'];
         if (id != null) await Alarm.stop(id as int);
-        try {
-          await WakelockPlus.disable();
-        } catch (_) {}
+        try { await WakelockPlus.disable(); } catch (_) {}
       } catch (e) {}
     } else if (task == 'safetyResyncTask') {
       try {
@@ -488,8 +411,7 @@ Future<void> main() async {
     try {
       final prefs = await SharedPreferences.getInstance();
       final mobile = prefs.getString('mobile');
-      if (mobile != null && mobile.isNotEmpty)
-        await sendTokenToBackend(mobile, newToken);
+      if (mobile != null && mobile.isNotEmpty) await sendTokenToBackend(mobile, newToken);
     } catch (_) {}
   });
 
@@ -509,15 +431,15 @@ Future<void> main() async {
   await AppUser.load();
   await AppConfig.load();
 
-  // ============ ROLE LOAD (app restart pe Admin tab yaad rahe) ============
+  // ===== Sabhi fonts pre-load karo — Arabic (Quran), Urdu (Nastaliq) =====
   try {
-    final _prefs = await SharedPreferences.getInstance();
-    currentUserRole = _prefs.getString('role') ?? 'mureed';
-  } catch (_) {}
-
-  try {
-    await GoogleFonts.pendingFonts([GoogleFonts.notoNastaliqUrdu()]);
+    await GoogleFonts.pendingFonts([
+      GoogleFonts.notoNastaliqUrdu(),
+      GoogleFonts.amiri(),
+      GoogleFonts.amiriQuran(),
+    ]);
   } catch (e) {}
+
   runApp(const ZahidiyaAlarmApp());
 }
 
@@ -530,7 +452,6 @@ class AppLang {
     final prefs = await SharedPreferences.getInstance();
     current = prefs.getString('app_lang') ?? 'ur';
   }
-
   static Future<void> toggle() async {
     current = current == 'ur' ? 'en' : 'ur';
     final prefs = await SharedPreferences.getInstance();
@@ -540,14 +461,11 @@ class AppLang {
 
 String pickByLang(String raw) {
   if (raw.contains('|')) {
-    final parts =
-        raw.split('|').map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
+    final parts = raw.split('|').map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
     if (parts.length >= 2) {
       final hasUrdu = RegExp('[\u0600-\u06FF]');
-      final urdu =
-          parts.firstWhere((p) => hasUrdu.hasMatch(p), orElse: () => parts[1]);
-      final english =
-          parts.firstWhere((p) => !hasUrdu.hasMatch(p), orElse: () => parts[0]);
+      final urdu = parts.firstWhere((p) => hasUrdu.hasMatch(p), orElse: () => parts[1]);
+      final english = parts.firstWhere((p) => !hasUrdu.hasMatch(p), orElse: () => parts[0]);
       return AppLang.current == 'ur' ? urdu : english;
     }
   }
@@ -555,16 +473,8 @@ String pickByLang(String raw) {
 }
 
 const Map<String, String> _romanUrduNameWords = {
-  'syed': 'سید',
-  'shabbir': 'شبیر',
-  'muhammad': 'محمد',
-  'ahmed': 'احمد',
-  'ali': 'علی',
-  'hussain': 'حسین',
-  'hassan': 'حسن',
-  'abbas': 'عباس',
-  'zahid': 'زاہد',
-  'zahida': 'زاہدہ',
+  'syed': 'سید', 'shabbir': 'شبیر', 'muhammad': 'محمد', 'ahmed': 'احمد', 'ali': 'علی',
+  'hussain': 'حسین', 'hassan': 'حسن', 'abbas': 'عباس', 'zahid': 'زاہد', 'zahida': 'زاہدہ',
 };
 
 String transliterateNameToUrdu(String name) {
@@ -577,8 +487,7 @@ String transliterateNameToUrdu(String name) {
 
 Future<String?> _transliterateToUrdu(String englishText) async {
   try {
-    final uri = Uri.parse(
-        'https://inputtools.google.com/request?text=${Uri.encodeComponent(englishText)}&itc=ur-t-i0-und&num=1&cp=0&cs=1&ie=utf-8&oe=utf-8');
+    final uri = Uri.parse('https://inputtools.google.com/request?text=${Uri.encodeComponent(englishText)}&itc=ur-t-i0-und&num=1&cp=0&cs=1&ie=utf-8&oe=utf-8');
     final res = await http.get(uri).timeout(const Duration(seconds: 8));
     if (res.statusCode == 200) {
       final data = jsonDecode(res.body);
@@ -597,7 +506,6 @@ class AppConfig {
     final prefs = await SharedPreferences.getInstance();
     endMinutesBefore = prefs.getInt('end_reminder_minutes_before_cache') ?? 0;
   }
-
   static Future<void> saveEndMinutes(int mins) async {
     if (mins <= 0) return;
     endMinutesBefore = mins;
@@ -613,34 +521,29 @@ class AppUser {
     if (AppLang.current == 'ur') return transliterateNameToUrdu(name);
     return name.trim();
   }
-
   static Future<void> load() async {
     final prefs = await SharedPreferences.getInstance();
     name = prefs.getString('mureed_name') ?? '';
+    currentUserMobile = prefs.getString('mobile') ?? '';
+    currentUserPassword = prefs.getString('password') ?? '';
+    currentUserRole = prefs.getString('role') ?? 'mureed';
   }
-
   static Future<void> save(String newName) async {
     name = newName;
     final prefs = await SharedPreferences.getInstance();
-    if (newName.isEmpty)
-      await prefs.remove('mureed_name');
-    else
-      await prefs.setString('mureed_name', newName);
+    if (newName.isEmpty) await prefs.remove('mureed_name');
+    else await prefs.setString('mureed_name', newName);
   }
 }
 
 const Map<String, Map<String, String>> kStrings = {
   'en': {
-    'app_title': 'Silsila-e-Zahidiya Alarm',
-    'mobile_label': 'Mobile Number',
-    'set_alarms_btn': 'Set Alarms',
-    'battery_btn': '🔋 Open Battery Settings',
+    'app_title': 'Silsila-e-Zahidiya Alarm', 'mobile_label': 'Mobile Number',
+    'set_alarms_btn': 'Set Alarms', 'battery_btn': '🔋 Open Battery Settings',
     'overlay_btn': '📱 Allow full-screen alarm',
-    'event_view_hint': 'Tap to view',
-    'no_event_content': 'Nothing to show.',
+    'event_view_hint': 'Tap to view', 'no_event_content': 'Nothing to show.',
     'band_karo_btn': '🛑 Stop',
-    'default_status':
-        'Enter your mobile number and tap "Set Alarms".',
+    'default_status': 'Enter your mobile number and tap "Set Alarms".',
     'status_empty_mobile': 'First enter your mobile number.',
     'status_not_registered': 'This mobile number is not registered.',
     'status_verify_error': 'Problem verifying, please check internet.',
@@ -648,26 +551,17 @@ const Map<String, Map<String, String>> kStrings = {
     'status_no_alarms_left': 'No alarms left for today.',
     'status_error_prefix': 'Internet or server issue: ',
     'lang_toggle': '🌐 اردو',
-    'prayer_start_label': 'Start',
-    'prayer_end_label': 'End',
-    'active_now_label': '🟢 Now',
-    'minutes_left_suffix': 'minute mein',
-    'change_number_label': '✏️ Change mobile number',
-    'tab_home': '🏠 Home',
-    'tab_website': '🌐 Website',
-    'tab_admin': '⚙️ Admin',
+    'prayer_start_label': 'Start', 'prayer_end_label': 'End', 'active_now_label': '🟢 Now',
+    'minutes_left_suffix': 'minute mein', 'change_number_label': '✏️ Change mobile number',
+    'tab_home': '🏠 Home', 'tab_website': '🌐 Website', 'tab_admin': '⚙️ Admin',
   },
   'ur': {
-    'app_title': 'سلسلہ زاہدیہ الارم',
-    'mobile_label': 'موبائل نمبر',
-    'set_alarms_btn': 'الارمز سیٹ کریں',
-    'battery_btn': '🔋 بیٹری سیٹنگز کھولیں',
+    'app_title': 'سلسلہ زاہدیہ الارم', 'mobile_label': 'موبائل نمبر',
+    'set_alarms_btn': 'الارمز سیٹ کریں', 'battery_btn': '🔋 بیٹری سیٹنگز کھولیں',
     'overlay_btn': '📱 فل اسکرین الارم کی اجازت دیں',
-    'event_view_hint': 'دیکھنے کے لیے ٹچ کریں',
-    'no_event_content': 'کچھ نہیں ہے۔',
+    'event_view_hint': 'دیکھنے کے لیے ٹچ کریں', 'no_event_content': 'کچھ نہیں ہے۔',
     'band_karo_btn': '🛑 بند کریں',
-    'default_status':
-        'موبائل نمبر ڈال کر "الارمز سیٹ کریں" دبائیں۔',
+    'default_status': 'موبائل نمبر ڈال کر "الارمز سیٹ کریں" دبائیں۔',
     'status_empty_mobile': 'پہلے موبائل نمبر ڈالیں۔',
     'status_not_registered': 'یہ نمبر رجسٹرڈ نہیں ہے۔',
     'status_verify_error': 'تصدیق میں مسئلہ ہوا۔',
@@ -675,30 +569,19 @@ const Map<String, Map<String, String>> kStrings = {
     'status_no_alarms_left': 'آج کے باقی الارم نہیں بچے۔',
     'status_error_prefix': 'انٹرنیٹ یا سرور مسئلہ: ',
     'lang_toggle': '🌐 English',
-    'prayer_start_label': 'شروع',
-    'prayer_end_label': 'ختم',
-    'active_now_label': '🟢 ابھی',
-    'minutes_left_suffix': 'منٹ میں',
-    'change_number_label': '✏️ موبائل نمبر تبدیل کریں',
-    'tab_home': '🏠 ہوم',
-    'tab_website': '🌐 ویب سائٹ',
-    'tab_admin': '⚙️ ایڈمن',
+    'prayer_start_label': 'شروع', 'prayer_end_label': 'ختم', 'active_now_label': '🟢 ابھی',
+    'minutes_left_suffix': 'منٹ میں', 'change_number_label': '✏️ موبائل نمبر تبدیل کریں',
+    'tab_home': '🏠 ہوم', 'tab_website': '🌐 ویب سائٹ', 'tab_admin': '⚙️ ایڈمن',
   },
 };
 
-String tr(String key) =>
-    kStrings[AppLang.current]?[key] ?? kStrings['en']![key] ?? key;
+String tr(String key) => kStrings[AppLang.current]?[key] ?? kStrings['en']![key] ?? key;
 
 const Map<String, String> _prayerNameUr = {
-  'Fajr': 'فجر',
-  'Dhuhr': 'ظہر',
-  'Asr': 'عصر',
-  'Maghrib': 'مغرب',
-  'Isha': 'عشاء',
+  'Fajr': 'فجر', 'Dhuhr': 'ظہر', 'Asr': 'عصر', 'Maghrib': 'مغرب', 'Isha': 'عشاء',
 };
 
-String prayerLabel(String name) =>
-    AppLang.current == 'ur' ? (_prayerNameUr[name] ?? name) : name;
+String prayerLabel(String name) => AppLang.current == 'ur' ? (_prayerNameUr[name] ?? name) : name;
 
 String prayerStartMessage(String prayerName) {
   final name = prayerLabel(prayerName);
@@ -709,19 +592,14 @@ String prayerStartMessage(String prayerName) {
 String prayerEndMessage(String prayerName, {int? minutesLeft}) {
   final name = prayerLabel(prayerName);
   if (AppLang.current == 'ur') {
-    final minsTxt = (minutesLeft != null && minutesLeft > 0)
-        ? ' ($minutesLeft ${tr('minutes_left_suffix')})'
-        : '';
+    final minsTxt = (minutesLeft != null && minutesLeft > 0) ? ' ($minutesLeft ${tr('minutes_left_suffix')})' : '';
     return '⏳ $name کی نماز کا وقت ختم ہونے والا ہے$minsTxt';
   }
-  final minsTxt = (minutesLeft != null && minutesLeft > 0)
-      ? ' ($minutesLeft ${tr('minutes_left_suffix')})'
-      : '';
+  final minsTxt = (minutesLeft != null && minutesLeft > 0) ? ' ($minutesLeft ${tr('minutes_left_suffix')})' : '';
   return '⏳ $name ki namaz ka waqt khatam hone wala hai$minsTxt';
 }
 
-List<Map<String, dynamic>> _groupScheduledItems(
-    List<Map<String, dynamic>> items) {
+List<Map<String, dynamic>> _groupScheduledItems(List<Map<String, dynamic>> items) {
   final Map<String, Map<String, dynamic>> groups = {};
   final List<Map<String, dynamic>> others = [];
   for (final item in items) {
@@ -731,23 +609,16 @@ List<Map<String, dynamic>> _groupScheduledItems(
     final em = _endTitleRe.firstMatch(title);
     if (sm != null) {
       final name = sm.group(1)!;
-      groups.putIfAbsent(
-          name, () => <String, dynamic>{'type': 'prayer', 'prayer': name});
+      groups.putIfAbsent(name, () => <String, dynamic>{'type': 'prayer', 'prayer': name});
       groups[name]!['start'] = time;
     } else if (em != null) {
       final name = em.group(1)!;
-      groups.putIfAbsent(
-          name, () => <String, dynamic>{'type': 'prayer', 'prayer': name});
+      groups.putIfAbsent(name, () => <String, dynamic>{'type': 'prayer', 'prayer': name});
       groups[name]!['end'] = (item['realEndTime'] as DateTime?) ?? time;
     } else {
       others.add(<String, dynamic>{
-        'type': 'other',
-        'title': title,
-        'time': time,
-        'end': item['realEndTime'],
-        'contentType': item['contentType'],
-        'contentText': item['contentText'],
-        'fileUrl': item['fileUrl'],
+        'type': 'other', 'title': title, 'time': time, 'end': item['realEndTime'],
+        'contentType': item['contentType'], 'contentText': item['contentText'], 'fileUrl': item['fileUrl'],
       });
     }
   }
@@ -755,23 +626,15 @@ List<Map<String, dynamic>> _groupScheduledItems(
   const prayerOrder = ['Fajr', 'Dhuhr', 'Asr', 'Maghrib', 'Isha'];
   result.sort((a, b) {
     if (a['type'] == 'prayer' && b['type'] == 'prayer') {
-      return prayerOrder
-          .indexOf(a['prayer'] as String)
-          .compareTo(prayerOrder.indexOf(b['prayer'] as String));
+      return prayerOrder.indexOf(a['prayer'] as String).compareTo(prayerOrder.indexOf(b['prayer'] as String));
     }
     if (a['type'] == 'prayer' && b['type'] != 'prayer') return -1;
     if (a['type'] != 'prayer' && b['type'] == 'prayer') return 1;
     return (a['time'] as DateTime).compareTo(b['time'] as DateTime);
   });
   final nowT = DateTime.now();
-  result.removeWhere((g) =>
-      g['type'] == 'prayer' &&
-      g['end'] != null &&
-      (g['end'] as DateTime).isBefore(nowT));
-  result.removeWhere((g) =>
-      g['type'] == 'other' &&
-      g['end'] != null &&
-      (g['end'] as DateTime).isBefore(nowT));
+  result.removeWhere((g) => g['type'] == 'prayer' && g['end'] != null && (g['end'] as DateTime).isBefore(nowT));
+  result.removeWhere((g) => g['type'] == 'other' && g['end'] != null && (g['end'] as DateTime).isBefore(nowT));
   return result;
 }
 
@@ -792,13 +655,11 @@ String translateAlarmTitle(String title) {
 
 TextStyle appFont([TextStyle? base]) {
   final b = base ?? const TextStyle();
-  if (AppLang.current == 'ur')
-    return GoogleFonts.notoNastaliqUrdu(textStyle: b, height: 1.9);
+  if (AppLang.current == 'ur') return GoogleFonts.notoNastaliqUrdu(textStyle: b, height: 1.9);
   return b;
 }
 
-const String _urduChars =
-    '\u0600-\u06FF\u0750-\u077F\uFB50-\uFDFF\uFE70-\uFEFF\u200C\u200D';
+const String _urduChars = '\u0600-\u06FF\u0750-\u077F\uFB50-\uFDFF\uFE70-\uFEFF\u200C\u200D';
 final RegExp _urduRun = RegExp('[$_urduChars]+(?:\\s+[$_urduChars]+)*');
 
 TextSpan mixedTextSpan(String text, TextStyle base) {
@@ -806,9 +667,7 @@ TextSpan mixedTextSpan(String text, TextStyle base) {
   int last = 0;
   for (final m in _urduRun.allMatches(text)) {
     if (m.start > last) children.add(TextSpan(text: text.substring(last, m.start)));
-    children.add(TextSpan(
-        text: m.group(0),
-        style: GoogleFonts.notoNastaliqUrdu(textStyle: base, height: 1.9)));
+    children.add(TextSpan(text: m.group(0), style: GoogleFonts.notoNastaliqUrdu(textStyle: base, height: 1.9)));
     last = m.end;
   }
   if (last < text.length) children.add(TextSpan(text: text.substring(last)));
@@ -822,8 +681,7 @@ class MixedText extends StatelessWidget {
   const MixedText(this.text, {super.key, this.style, this.textAlign});
   @override
   Widget build(BuildContext context) {
-    return Text.rich(mixedTextSpan(text, style ?? const TextStyle()),
-        textAlign: textAlign);
+    return Text.rich(mixedTextSpan(text, style ?? const TextStyle()), textAlign: textAlign);
   }
 }
 
@@ -857,87 +715,128 @@ class MainTabScreen extends StatefulWidget {
 
 class _MainTabScreenState extends State<MainTabScreen> {
   int _currentIndex = 0;
-
-  WebViewController? _webController;    // Website tab
-  WebViewController? _adminController;  // Admin tab
+  WebViewController? _webController;
   bool _webLoading = true;
-  bool _adminLoading = true;
-
-  final Key _homeKey = UniqueKey();
+  bool _loginSynced = false;
 
   @override
   void initState() {
     super.initState();
-    _webController = _makeController(websiteUrl, (v) => _webLoading = v);
-    if (currentUserRole == 'admin') {
-      _adminController =
-          _makeController('$websiteUrl/admin.html', (v) => _adminLoading = v);
-    }
+    _initWebView();
   }
 
-  /// HomeScreen se role update hone par ye call hoga
-  void onRoleChanged() {
-    if (!mounted) return;
-    if (currentUserRole == 'admin' && _adminController == null) {
-      _adminController =
-          _makeController('$websiteUrl/admin.html', (v) => _adminLoading = v);
-    }
-    setState(() {});
-  }
-
-  WebViewController _makeController(String url, void Function(bool) setLoading) {
-    return WebViewController()
+  void _initWebView() {
+    _webController = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
       ..setBackgroundColor(Colors.white)
       ..setNavigationDelegate(NavigationDelegate(
-        onPageStarted: (_) => setState(() => setLoading(true)),
-        onPageFinished: (_) => setState(() => setLoading(false)),
+        onPageStarted: (url) => setState(() => _webLoading = true),
+        onPageFinished: (url) async {
+          setState(() => _webLoading = false);
+          // ===== Website load hone par login sync karo =====
+          await _syncLoginToWebView();
+        },
         onNavigationRequest: (request) {
-          final u = request.url;
-          // Website ke andar ke links → andar
-          if (u.startsWith(websiteUrl) ||
-              u.startsWith('https://zahidiya-mysore.pages.dev')) {
+          if (request.url.startsWith(websiteUrl) ||
+              request.url.startsWith('https://zahidiya-mysore.pages.dev')) {
             return NavigationDecision.navigate;
           }
-          // Bahar ke links → bahar kholo
-          if (u.startsWith('http://') ||
-              u.startsWith('https://') ||
-              u.startsWith('tel:') ||
-              u.startsWith('mailto:') ||
-              u.startsWith('whatsapp:')) {
-            _openExternal(u);
+          if (request.url.startsWith('http://') ||
+              request.url.startsWith('https://') ||
+              request.url.startsWith('tel:') ||
+              request.url.startsWith('mailto:') ||
+              request.url.startsWith('whatsapp:')) {
+            _openExternal(request.url);
             return NavigationDecision.prevent;
           }
           return NavigationDecision.navigate;
         },
       ))
-      ..loadRequest(Uri.parse(url));
+      ..loadRequest(Uri.parse(websiteUrl));
+  }
+
+  // ===== App ka login WebView ke localStorage mein daalo =====
+  // Taaki website auto-login kar le — user ko dobara login nahi karna pade
+  Future<void> _syncLoginToWebView() async {
+    if (_loginSynced) return;
+    final prefs = await SharedPreferences.getInstance();
+    final mobile = prefs.getString('mobile') ?? '';
+    final password = prefs.getString('password') ?? '';
+    final lang = AppLang.current;
+    if (mobile.isEmpty || password.isEmpty) return;
+
+    final js = """
+      try {
+        localStorage.setItem('zahidiya_mobile', '$mobile');
+        localStorage.setItem('zahidiya_password', '$password');
+        localStorage.setItem('zahidiya_lang', '$lang');
+        if (typeof tryAutoLogin === 'function' && !window.currentUser) {
+          tryAutoLogin();
+        }
+        true;
+      } catch(e) { false; }
+    """;
+    try {
+      await _webController?.runJavaScript(js);
+      _loginSynced = true;
+    } catch (_) {}
+  }
+
+  // ===== Website reload par bhi sync =====
+  Future<void> _syncLoginNow() async {
+    final prefs = await SharedPreferences.getInstance();
+    final mobile = prefs.getString('mobile') ?? '';
+    final password = prefs.getString('password') ?? '';
+    final lang = AppLang.current;
+    if (mobile.isEmpty || password.isEmpty) return;
+    final js = """
+      try {
+        localStorage.setItem('zahidiya_mobile', '$mobile');
+        localStorage.setItem('zahidiya_password', '$password');
+        localStorage.setItem('zahidiya_lang', '$lang');
+        if (typeof tryAutoLogin === 'function' && !window.currentUser) {
+          tryAutoLogin();
+        }
+        true;
+      } catch(e) { false; }
+    """;
+    try { await _webController?.runJavaScript(js); } catch (_) {}
   }
 
   Future<void> _openExternal(String url) async {
     try {
-      await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+      final uri = Uri.parse(url);
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
     } catch (_) {}
   }
+
+  Key _homeKey = UniqueKey();
 
   @override
   Widget build(BuildContext context) {
     final List<BottomNavigationBarItem> items = [
-      BottomNavigationBarItem(icon: const Icon(Icons.home), label: tr('tab_home')),
       BottomNavigationBarItem(
-          icon: const Icon(Icons.language), label: tr('tab_website')),
+        icon: const Icon(Icons.home, size: 22),
+        label: tr('tab_home'),
+      ),
+      BottomNavigationBarItem(
+        icon: const Icon(Icons.language, size: 22),
+        label: tr('tab_website'),
+      ),
     ];
-    final List<Widget> pages = [
-      HomeScreen(key: _homeKey, onRoleChanged: onRoleChanged),
-      _buildWebTab(_webController, _webLoading),
-    ];
-
     if (currentUserRole == 'admin') {
       items.add(BottomNavigationBarItem(
-        icon: const Icon(Icons.admin_panel_settings),
+        icon: const Icon(Icons.admin_panel_settings, size: 22),
         label: tr('tab_admin'),
       ));
-      pages.add(_buildWebTab(_adminController, _adminLoading));
+    }
+
+    final List<Widget> pages = [
+      HomeScreen(key: _homeKey),
+      _buildWebViewScreen(),
+    ];
+    if (currentUserRole == 'admin') {
+      pages.add(_buildWebViewScreen());
     }
 
     return PopScope(
@@ -951,34 +850,53 @@ class _MainTabScreenState extends State<MainTabScreen> {
       },
       child: Scaffold(
         body: IndexedStack(index: _currentIndex, children: pages),
-        bottomNavigationBar: BottomNavigationBar(
-          currentIndex: _currentIndex,
-          onTap: (i) => setState(() => _currentIndex = i),
-          selectedItemColor: Colors.green,
-          unselectedItemColor: Colors.grey,
-          type: BottomNavigationBarType.fixed,
-          items: items,
+        bottomNavigationBar: Container(
+          decoration: const BoxDecoration(
+            boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 4, offset: Offset(0, -2))],
+          ),
+          child: BottomNavigationBar(
+            currentIndex: _currentIndex,
+            onTap: (i) {
+              setState(() => _currentIndex = i);
+              if (i == 1 || i == 2) {
+                // Login sync karo phir load karo
+                _syncLoginNow().then((_) {
+                  final url = (i == 2) ? '$websiteUrl/admin.html' : websiteUrl;
+                  _webController?.loadRequest(Uri.parse(url));
+                });
+              }
+            },
+            selectedItemColor: Colors.green,
+            unselectedItemColor: Colors.grey,
+            backgroundColor: Colors.white,
+            type: BottomNavigationBarType.fixed,
+            selectedFontSize: 12,
+            unselectedFontSize: 11,
+            iconSize: 22,
+            selectedLabelStyle: const TextStyle(fontWeight: FontWeight.bold, height: 1.2),
+            unselectedLabelStyle: const TextStyle(height: 1.2),
+            items: items,
+          ),
         ),
       ),
     );
   }
 
-  Widget _buildWebTab(WebViewController? controller, bool loading) {
+  Widget _buildWebViewScreen() {
     return Stack(
       children: [
-        if (controller != null) WebViewWidget(controller: controller),
-        if (loading) const Center(child: CircularProgressIndicator()),
+        if (_webController != null) WebViewWidget(controller: _webController!),
+        if (_webLoading) const Center(child: CircularProgressIndicator()),
         Positioned(
-          top: 40,
-          left: 8,
+          top: 40, left: 8,
           child: SafeArea(
             child: Material(
               color: Colors.black54,
               borderRadius: BorderRadius.circular(20),
               child: InkWell(
                 onTap: () async {
-                  if (await controller?.canGoBack() ?? false) {
-                    controller?.goBack();
+                  if (await _webController?.canGoBack() ?? false) {
+                    _webController?.goBack();
                   } else {
                     setState(() => _currentIndex = 0);
                   }
@@ -1001,7 +919,6 @@ class _MainTabScreenState extends State<MainTabScreen> {
 // ============================================================
 
 const String _urTextMark = '\n[[UR]]\n';
-
 String eventTextForLang(String raw) {
   final i = raw.indexOf(_urTextMark);
   if (i < 0) return raw.trim();
@@ -1037,9 +954,7 @@ class _EventContentScreenState extends State<EventContentScreen> {
   }
 
   String? get _youtubeId {
-    final m = RegExp(
-            r'(?:youtu\.be/|youtube\.com/(?:watch\?v=|live/|embed/|shorts/))([A-Za-z0-9_-]{6,})')
-        .firstMatch(widget.fileUrl);
+    final m = RegExp(r'(?:youtu\.be/|youtube\.com/(?:watch\?v=|live/|embed/|shorts/))([A-Za-z0-9_-]{6,})').firstMatch(widget.fileUrl);
     return m?.group(1);
   }
 
@@ -1050,31 +965,27 @@ class _EventContentScreenState extends State<EventContentScreen> {
     if (widget.contentType == 'pdf') {
       _web = WebViewController()
         ..setJavaScriptMode(JavaScriptMode.unrestricted)
-        ..loadRequest(Uri.parse(
-            'https://docs.google.com/gview?embedded=true&url=${Uri.encodeComponent(_url)}'));
+        ..loadRequest(Uri.parse('https://docs.google.com/gview?embedded=true&url=${Uri.encodeComponent(_url)}'));
     } else if (widget.contentType == 'youtube') {
       final id = _youtubeId;
       if (id != null) {
         _web = WebViewController()
           ..setJavaScriptMode(JavaScriptMode.unrestricted)
           ..setBackgroundColor(Colors.black)
-          ..loadRequest(Uri.parse(
-              'https://www.youtube.com/embed/$id?autoplay=1&playsinline=1'));
+          ..loadRequest(Uri.parse('https://www.youtube.com/embed/$id?autoplay=1&playsinline=1'));
       }
     } else if (widget.contentType == 'video') {
       final safe = _url.replaceAll('"', '%22');
       _web = WebViewController()
         ..setJavaScriptMode(JavaScriptMode.unrestricted)
         ..setBackgroundColor(Colors.black)
-        ..loadHtmlString(
-            '<html><body style="margin:0;background:#000;display:flex;align-items:center;justify-content:center;height:100vh;"><video controls autoplay playsinline style="max-width:100%;max-height:100%" src="$safe"></video></body></html>');
+        ..loadHtmlString('<html><body style="margin:0;background:#000;display:flex;align-items:center;justify-content:center;height:100vh;"><video controls autoplay playsinline style="max-width:100%;max-height:100%" src="$safe"></video></body></html>');
     } else if (widget.contentType == 'audio') {
       final safe = _url.replaceAll('"', '%22');
       _web = WebViewController()
         ..setJavaScriptMode(JavaScriptMode.unrestricted)
         ..setBackgroundColor(const Color(0xFF0F2A0F))
-        ..loadHtmlString(
-            '<html><body style="margin:0;background:#0f2a0f;display:flex;align-items:center;justify-content:center;height:100vh;"><audio controls style="width:92%" src="$safe"></audio></body></html>');
+        ..loadHtmlString('<html><body style="margin:0;background:#0f2a0f;display:flex;align-items:center;justify-content:center;height:100vh;"><audio controls style="width:92%" src="$safe"></audio></body></html>');
     }
   }
 
@@ -1084,20 +995,12 @@ class _EventContentScreenState extends State<EventContentScreen> {
       final txt = eventTextForLang(widget.contentText);
       return SingleChildScrollView(
         padding: const EdgeInsets.all(16),
-        child: MixedText(txt.isEmpty ? tr('no_event_content') : txt,
-            style: const TextStyle(fontSize: 18, height: 1.6)),
+        child: MixedText(txt.isEmpty ? tr('no_event_content') : txt, style: const TextStyle(fontSize: 18, height: 1.6)),
       );
     }
     if (type == 'image' && widget.fileUrl.isNotEmpty) {
       return InteractiveViewer(
-        child: Center(
-          child: Image.network(
-            _url,
-            loadingBuilder: (context, child, progress) => progress == null
-                ? child
-                : const Center(child: CircularProgressIndicator()),
-          ),
-        ),
+        child: Center(child: Image.network(_url, loadingBuilder: (context, child, progress) => progress == null ? child : const Center(child: CircularProgressIndicator()))),
       );
     }
     if (_web != null) return WebViewWidget(controller: _web!);
@@ -1108,8 +1011,7 @@ class _EventContentScreenState extends State<EventContentScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: MixedText(widget.title,
-            style: const TextStyle(color: Colors.white, fontSize: 18)),
+        title: MixedText(widget.title, style: const TextStyle(color: Colors.white, fontSize: 18)),
         backgroundColor: Colors.green,
         iconTheme: const IconThemeData(color: Colors.white),
       ),
@@ -1142,43 +1044,25 @@ class AlarmRingingScreen extends StatelessWidget {
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   if (name.trim().isNotEmpty) ...[
-                    MixedText(name,
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 24,
-                            fontWeight: FontWeight.bold)),
+                    MixedText(name, textAlign: TextAlign.center, style: const TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold)),
                     const SizedBox(height: 16),
                   ],
                   const Icon(Icons.alarm, color: Colors.white, size: 90),
                   const SizedBox(height: 24),
-                  MixedText(title,
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 24,
-                          fontWeight: FontWeight.bold)),
+                  MixedText(title, textAlign: TextAlign.center, style: const TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold)),
                   const SizedBox(height: 60),
                   ElevatedButton(
                     onPressed: () async {
                       await _stopRingingOnly();
-                      try {
-                        await WakelockPlus.disable();
-                      } catch (_) {}
-                      if (navigatorKey.currentState?.canPop() ?? false)
-                        navigatorKey.currentState?.pop();
+                      try { await WakelockPlus.disable(); } catch (_) {}
+                      if (navigatorKey.currentState?.canPop() ?? false) navigatorKey.currentState?.pop();
                     },
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.white,
-                      foregroundColor: Colors.green,
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 48, vertical: 20),
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(16)),
+                      backgroundColor: Colors.white, foregroundColor: Colors.green,
+                      padding: const EdgeInsets.symmetric(horizontal: 48, vertical: 20),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                     ),
-                    child: Text(tr('band_karo_btn'),
-                        style: appFont(const TextStyle(
-                            fontSize: 22, fontWeight: FontWeight.bold))),
+                    child: Text(tr('band_karo_btn'), style: appFont(const TextStyle(fontSize: 22, fontWeight: FontWeight.bold))),
                   ),
                 ],
               ),
@@ -1195,36 +1079,28 @@ class AlarmRingingScreen extends StatelessWidget {
 // ============================================================
 
 class HomeScreen extends StatefulWidget {
-  final VoidCallback? onRoleChanged;
-  const HomeScreen({super.key, this.onRoleChanged});
+  const HomeScreen({super.key});
   @override
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
 class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   final _mobileController = TextEditingController();
+  final _passwordController = TextEditingController();
   String _statusKind = 'default';
   int _statusCount = 0;
   String _statusErrorDetail = '';
 
   String get _status {
     switch (_statusKind) {
-      case 'empty_mobile':
-        return tr('status_empty_mobile');
-      case 'not_registered':
-        return tr('status_not_registered');
-      case 'verify_error':
-        return tr('status_verify_error');
-      case 'fetching':
-        return tr('status_fetching');
-      case 'no_alarms_left':
-        return tr('status_no_alarms_left');
-      case 'success':
-        return trSetSuccess(_statusCount);
-      case 'error':
-        return tr('status_error_prefix') + _statusErrorDetail;
-      default:
-        return tr('default_status');
+      case 'empty_mobile': return tr('status_empty_mobile');
+      case 'not_registered': return tr('status_not_registered');
+      case 'verify_error': return tr('status_verify_error');
+      case 'fetching': return tr('status_fetching');
+      case 'no_alarms_left': return tr('status_no_alarms_left');
+      case 'success': return trSetSuccess(_statusCount);
+      case 'error': return tr('status_error_prefix') + _statusErrorDetail;
+      default: return tr('default_status');
     }
   }
 
@@ -1247,10 +1123,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       if (!mounted) return;
       setState(() {
         _scheduledItems = items;
-        if (items.isNotEmpty) {
-          _statusKind = 'success';
-          _statusCount = items.length;
-        }
+        if (items.isNotEmpty) { _statusKind = 'success'; _statusCount = items.length; }
       });
     } catch (_) {}
   }
@@ -1263,15 +1136,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     final nav = navigatorKey.currentState;
     if (nav == null) return;
     _ringingScreenOpen = true;
-    nav
-        .push(MaterialPageRoute(
-          builder: (_) => AlarmRingingScreen(
-              title: translateAlarmTitle(body.isNotEmpty ? body : 'Alarm')),
-          fullscreenDialog: true,
-        ))
-        .then((_) {
-      _ringingScreenOpen = false;
-    });
+    nav.push(MaterialPageRoute(
+      builder: (_) => AlarmRingingScreen(title: translateAlarmTitle(body.isNotEmpty ? body : 'Alarm')),
+      fullscreenDialog: true,
+    )).then((_) { _ringingScreenOpen = false; });
   }
 
   @override
@@ -1283,24 +1151,18 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     _setupFCM();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final ringing = Alarm.ringing.value;
-      if (ringing.alarms.isNotEmpty)
-        _openRingingScreen(ringing.alarms.first.notificationSettings.body);
+      if (ringing.alarms.isNotEmpty) _openRingingScreen(ringing.alarms.first.notificationSettings.body);
     });
     _highlightRefreshTimer = Timer.periodic(const Duration(seconds: 60), (_) {
       if (!mounted) return;
       setState(() {});
-      final hasPrayerLeft =
-          _groupScheduledItems(_scheduledItems).any((g) => g['type'] == 'prayer');
-      if (!hasPrayerLeft &&
-          DateTime.now().difference(_lastFetched) > const Duration(minutes: 10))
-        _silentRefresh();
+      final hasPrayerLeft = _groupScheduledItems(_scheduledItems).any((g) => g['type'] == 'prayer');
+      if (!hasPrayerLeft && DateTime.now().difference(_lastFetched) > const Duration(minutes: 10)) _silentRefresh();
     });
     _screenChannel.setMethodCallHandler((call) async {
       if (call.method == 'screenOff') {
         await _stopRingingOnly();
-        try {
-          await WakelockPlus.disable();
-        } catch (_) {}
+        try { await WakelockPlus.disable(); } catch (_) {}
       }
     });
     _ringingSub = Alarm.ringing.listen((alarmSet) {
@@ -1326,10 +1188,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       final ringing = Alarm.ringing.value;
-      if (ringing.alarms.isNotEmpty)
-        _openRingingScreen(ringing.alarms.first.notificationSettings.body);
-      if (DateTime.now().difference(_lastFetched) > const Duration(minutes: 10))
-        _silentRefresh();
+      if (ringing.alarms.isNotEmpty) _openRingingScreen(ringing.alarms.first.notificationSettings.body);
+      if (DateTime.now().difference(_lastFetched) > const Duration(minutes: 10)) _silentRefresh();
     }
   }
 
@@ -1342,22 +1202,17 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('fcm_token', token);
       final mobile = prefs.getString('mobile');
-      if (mobile != null && mobile.isNotEmpty)
-        await sendTokenToBackend(mobile, token);
+      if (mobile != null && mobile.isNotEmpty) await sendTokenToBackend(mobile, token);
     }
     fcm.FirebaseMessaging.onMessage.listen((fcm.RemoteMessage message) {
       if (message.data['type'] == 'refresh_settings') {
         SharedPreferences.getInstance().then((prefs) {
           final mobile = prefs.getString('mobile');
-          if (mobile != null && mobile.isNotEmpty)
-            fetchAndScheduleForMobile(mobile);
+          if (mobile != null && mobile.isNotEmpty) fetchAndScheduleForMobile(mobile);
         });
         return;
       }
-      triggerImmediateAlarm(_titleFromMessage(message),
-          durationSeconds: _durationFromMessage(message),
-          category: _categoryFromMessage(message),
-          showOverlay: false);
+      triggerImmediateAlarm(_titleFromMessage(message), durationSeconds: _durationFromMessage(message), category: _categoryFromMessage(message), showOverlay: false);
     });
   }
 
@@ -1366,6 +1221,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     final saved = prefs.getString('mobile');
     if (saved != null) {
       _mobileController.text = saved;
+      _passwordController.text = prefs.getString('password') ?? '';
       setState(() => _showMobileField = false);
       _fetchAndScheduleAlarms();
     }
@@ -1387,42 +1243,38 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   Future<void> _fetchAndScheduleAlarms() async {
     final mobile = _mobileController.text.trim();
-    if (mobile.isEmpty) {
-      setState(() => _statusKind = 'empty_mobile');
-      return;
-    }
-    final verifyUri = Uri.parse('$websiteUrl/api/verify-mobile?mobile=$mobile');
+    final password = _passwordController.text.trim();
+    if (mobile.isEmpty) { setState(() => _statusKind = 'empty_mobile'); return; }
+    if (password.isEmpty) { setState(() => _statusKind = 'verify_error'); return; }
+
+    final verifyUri = Uri.parse('$websiteUrl/api/state?mobile=${Uri.encodeComponent(mobile)}&password=${Uri.encodeComponent(password)}');
     try {
-      final verifyRes =
-          await http.get(verifyUri).timeout(const Duration(seconds: 15));
+      final verifyRes = await http.get(verifyUri).timeout(const Duration(seconds: 15));
       final verifyData = jsonDecode(verifyRes.body);
-      if (verifyData['registered'] != true) {
+      if (verifyData['user'] == null) {
+        setState(() => _statusKind = 'not_registered');
+        return;
+      }
+      final user = verifyData['user'];
+      if (user['status'] == 'pending' || user['status'] == 'rejected' || user['is_blocked'] == 1) {
         setState(() => _statusKind = 'not_registered');
         return;
       }
       setState(() => _showMobileField = false);
 
-      // ===== ROLE SET KARO =====
-      currentUserRole = verifyData['role']?.toString() ?? 'mureed';
-      currentUserName = verifyData['name']?.toString() ?? '';
+      currentUserRole = user['role']?.toString() ?? 'mureed';
+      currentUserName = user['name']?.toString() ?? '';
+      currentUserMobile = mobile;
+      currentUserPassword = password;
 
-      // Save role so app restart pe bhi yaad rahe
-      final _p = await SharedPreferences.getInstance();
-      await _p.setString('role', currentUserRole);
-      // Parent ko batao — Admin tab show karne ke liye
-      widget.onRoleChanged?.call();
-
-      final String? fetchedName = verifyData['name']?.toString();
+      final String? fetchedName = user['name']?.toString();
       if (fetchedName != null && fetchedName.trim().isNotEmpty) {
         final String cleanName = fetchedName.trim();
         final bool alreadyBilingual = cleanName.contains('|');
-        final bool hasUrduScript =
-            RegExp('[\u0600-\u06FF]').hasMatch(cleanName);
+        final bool hasUrduScript = RegExp('[\u0600-\u06FF]').hasMatch(cleanName);
         if (!alreadyBilingual && !hasUrduScript) {
           final urduName = await _transliterateToUrdu(cleanName);
-          await AppUser.save(urduName != null && urduName.isNotEmpty
-              ? '$cleanName | $urduName'
-              : cleanName);
+          await AppUser.save(urduName != null && urduName.isNotEmpty ? '$cleanName | $urduName' : cleanName);
         } else {
           await AppUser.save(cleanName);
         }
@@ -1432,13 +1284,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       return;
     }
 
-    setState(() {
-      _loading = true;
-      _statusKind = 'fetching';
-    });
+    setState(() { _loading = true; _statusKind = 'fetching'; });
 
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('mobile', mobile);
+    await prefs.setString('password', password);
     await prefs.setString('role', currentUserRole);
 
     if (_fcmToken != null) await sendTokenToBackend(mobile, _fcmToken!);
@@ -1449,18 +1299,15 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       setState(() {
         _loading = false;
         _scheduledItems = items;
-        if (items.isNotEmpty) {
-          _statusKind = 'success';
-          _statusCount = items.length;
-        } else
-          _statusKind = 'no_alarms_left';
+        if (items.isNotEmpty) { _statusKind = 'success'; _statusCount = items.length; }
+        else _statusKind = 'no_alarms_left';
       });
+      // Role change hone par MainTabScreen ko refresh karo
+      if (mounted) {
+        (context.findAncestorStateOfType<_MainTabScreenState>())?.setState(() {});
+      }
     } catch (e) {
-      setState(() {
-        _loading = false;
-        _statusKind = 'error';
-        _statusErrorDetail = '$e';
-      });
+      setState(() { _loading = false; _statusKind = 'error'; _statusErrorDetail = '$e'; });
     }
   }
 
@@ -1475,28 +1322,17 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text(
-            AppUser.displayName.trim().isNotEmpty
-                ? AppUser.displayName
-                : tr('app_title'),
-            style: appFont()),
+        title: Text(AppUser.displayName.trim().isNotEmpty ? AppUser.displayName : tr('app_title'), style: appFont()),
         backgroundColor: Colors.green,
         foregroundColor: Colors.white,
         actions: [
           TextButton(
-            onPressed: () async {
-              await AppLang.toggle();
-              setState(() {});
-            },
+            onPressed: () async { await AppLang.toggle(); setState(() {}); },
             child: Text(
               tr('lang_toggle'),
               style: AppLang.current == 'en'
-                  ? GoogleFonts.notoNastaliqUrdu(
-                      textStyle: const TextStyle(
-                          color: Colors.white, fontWeight: FontWeight.bold),
-                      height: 1.9)
-                  : const TextStyle(
-                      color: Colors.white, fontWeight: FontWeight.bold),
+                  ? GoogleFonts.notoNastaliqUrdu(textStyle: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold), height: 1.9)
+                  : const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
             ),
           ),
         ],
@@ -1509,45 +1345,35 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               TextField(
                 controller: _mobileController,
                 keyboardType: TextInputType.phone,
-                decoration: InputDecoration(
-                    labelText: tr('mobile_label'),
-                    labelStyle: appFont(),
-                    border: const OutlineInputBorder()),
+                decoration: InputDecoration(labelText: tr('mobile_label'), labelStyle: appFont(), border: const OutlineInputBorder()),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: _passwordController,
+                obscureText: true,
+                decoration: const InputDecoration(labelText: 'Password', border: OutlineInputBorder()),
               ),
               const SizedBox(height: 16),
               ElevatedButton(
                 onPressed: _loading ? null : _fetchAndScheduleAlarms,
                 style: ElevatedButton.styleFrom(
                   padding: const EdgeInsets.symmetric(vertical: 14),
-                  backgroundColor: Colors.green,
-                  foregroundColor: Colors.white,
+                  backgroundColor: Colors.green, foregroundColor: Colors.white,
                   minimumSize: const Size(double.infinity, 48),
                 ),
                 child: _loading
-                    ? const SizedBox(
-                        height: 20,
-                        width: 20,
-                        child: CircularProgressIndicator(
-                            color: Colors.white, strokeWidth: 2))
+                    ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
                     : Text(tr('set_alarms_btn'), style: appFont()),
               ),
             ] else ...[
               Container(
                 width: double.infinity,
-                padding:
-                    const EdgeInsets.symmetric(vertical: 18, horizontal: 12),
-                decoration: BoxDecoration(
-                    border: Border.all(color: Colors.green, width: 1.5),
-                    borderRadius: BorderRadius.circular(8)),
+                padding: const EdgeInsets.symmetric(vertical: 18, horizontal: 12),
+                decoration: BoxDecoration(border: Border.all(color: Colors.green, width: 1.5), borderRadius: BorderRadius.circular(8)),
                 child: MixedText(
-                  AppUser.displayName.trim().isNotEmpty
-                      ? AppUser.displayName
-                      : _mobileController.text,
+                  AppUser.displayName.trim().isNotEmpty ? AppUser.displayName : _mobileController.text,
                   textAlign: TextAlign.center,
-                  style: const TextStyle(
-                      fontSize: 22,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.green),
+                  style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.green),
                 ),
               ),
               const SizedBox(height: 8),
@@ -1555,33 +1381,24 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 alignment: Alignment.center,
                 child: TextButton(
                   onPressed: () => setState(() => _showMobileField = true),
-                  child: Text(tr('change_number_label'),
-                      style: appFont(const TextStyle(fontSize: 13))),
+                  child: Text(tr('change_number_label'), style: appFont(const TextStyle(fontSize: 13))),
                 ),
               ),
             ],
             const SizedBox(height: 10),
             OutlinedButton(
-              onPressed: () async {
-                await openAppSettings();
-              },
-              style: OutlinedButton.styleFrom(
-                  minimumSize: const Size(double.infinity, 44)),
+              onPressed: () async { await openAppSettings(); },
+              style: OutlinedButton.styleFrom(minimumSize: const Size(double.infinity, 44)),
               child: Text(tr('battery_btn'), style: appFont()),
             ),
             const SizedBox(height: 10),
             OutlinedButton(
-              onPressed: () async {
-                await Permission.systemAlertWindow.request();
-              },
-              style: OutlinedButton.styleFrom(
-                  minimumSize: const Size(double.infinity, 44)),
+              onPressed: () async { await Permission.systemAlertWindow.request(); },
+              style: OutlinedButton.styleFrom(minimumSize: const Size(double.infinity, 44)),
               child: Text(tr('overlay_btn'), style: appFont()),
             ),
             const SizedBox(height: 16),
-            Text(_status,
-                textAlign: TextAlign.center,
-                style: appFont(const TextStyle(fontSize: 15))),
+            Text(_status, textAlign: TextAlign.center, style: appFont(const TextStyle(fontSize: 15))),
             const SizedBox(height: 16),
             Expanded(
               child: Builder(builder: (context) {
@@ -1594,62 +1411,36 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                       final DateTime? start = g['start'] as DateTime?;
                       final DateTime? end = g['end'] as DateTime?;
                       final now = DateTime.now();
-                      final bool isActive = start != null &&
-                          end != null &&
-                          now.isAfter(start) &&
-                          now.isBefore(end);
+                      final bool isActive = start != null && end != null && now.isAfter(start) && now.isBefore(end);
                       return Card(
                         shape: isActive
-                            ? RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(8),
-                                side: const BorderSide(
-                                    color: Color(0xFFFFD700), width: 2.5))
+                            ? RoundedRectangleBorder(borderRadius: BorderRadius.circular(8), side: const BorderSide(color: Color(0xFFFFD700), width: 2.5))
                             : null,
                         color: isActive ? const Color(0xFFFFFBEA) : null,
                         child: Padding(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 16, vertical: 10),
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Row(children: [
                                 const Icon(Icons.alarm, color: Colors.green),
                                 const SizedBox(width: 10),
-                                Text(prayerLabel(g['prayer'] as String),
-                                    style: appFont(const TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 16))),
+                                Text(prayerLabel(g['prayer'] as String), style: appFont(const TextStyle(fontWeight: FontWeight.bold, fontSize: 16))),
                                 if (isActive) ...[
                                   const SizedBox(width: 8),
-                                  Text(tr('active_now_label'),
-                                      style: appFont(const TextStyle(
-                                          color: Color(0xFFB8860B),
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 12))),
+                                  Text(tr('active_now_label'), style: appFont(const TextStyle(color: Color(0xFFB8860B), fontWeight: FontWeight.bold, fontSize: 12))),
                                 ],
                               ]),
                               const Divider(height: 14),
-                              Row(
-                                  mainAxisAlignment:
-                                      MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    Text(tr('prayer_start_label'),
-                                        style: appFont(const TextStyle(
-                                            color: Colors.black54))),
-                                    Text(start != null ? _formatTime(start) : '—',
-                                        style: appFont()),
-                                  ]),
+                              Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+                                Text(tr('prayer_start_label'), style: appFont(const TextStyle(color: Colors.black54))),
+                                Text(start != null ? _formatTime(start) : '—', style: appFont()),
+                              ]),
                               const SizedBox(height: 4),
-                              Row(
-                                  mainAxisAlignment:
-                                      MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    Text(tr('prayer_end_label'),
-                                        style: appFont(const TextStyle(
-                                            color: Colors.black54))),
-                                    Text(end != null ? _formatTime(end) : '—',
-                                        style: appFont()),
-                                  ]),
+                              Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+                                Text(tr('prayer_end_label'), style: appFont(const TextStyle(color: Colors.black54))),
+                                Text(end != null ? _formatTime(end) : '—', style: appFont()),
+                              ]),
                             ],
                           ),
                         ),
@@ -1658,34 +1449,21 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                     final String cType = (g['contentType'] ?? 'none').toString();
                     final String cText = (g['contentText'] ?? '').toString();
                     final String cUrl = (g['fileUrl'] ?? '').toString();
-                    final bool hasContent = (cType == 'text' &&
-                            cText.trim().isNotEmpty) ||
-                        (cType != 'text' && cType != 'none' && cUrl.isNotEmpty);
+                    final bool hasContent = (cType == 'text' && cText.trim().isNotEmpty) || (cType != 'text' && cType != 'none' && cUrl.isNotEmpty);
                     return Card(
                       child: ListTile(
-                        leading: Icon(hasContent ? Icons.attach_file : Icons.alarm,
-                            color: Colors.green),
+                        leading: Icon(hasContent ? Icons.attach_file : Icons.alarm, color: Colors.green),
                         title: MixedText(translateAlarmTitle(g['title'] as String)),
-                        subtitle: hasContent
-                            ? Text(tr('event_view_hint'),
-                                style: appFont(const TextStyle(
-                                    fontSize: 12, color: Colors.green)))
-                            : null,
-                        trailing: Text(_formatTime(g['time'] as DateTime),
-                            style: appFont()),
-                        onTap: hasContent
-                            ? () {
-                                Navigator.of(context).push(MaterialPageRoute(
-                                  builder: (_) => EventContentScreen(
-                                    title: translateAlarmTitle(
-                                        g['title'] as String),
-                                    contentType: cType,
-                                    contentText: cText,
-                                    fileUrl: cUrl,
-                                  ),
-                                ));
-                              }
-                            : null,
+                        subtitle: hasContent ? Text(tr('event_view_hint'), style: appFont(const TextStyle(fontSize: 12, color: Colors.green))) : null,
+                        trailing: Text(_formatTime(g['time'] as DateTime), style: appFont()),
+                        onTap: hasContent ? () {
+                          Navigator.of(context).push(MaterialPageRoute(
+                            builder: (_) => EventContentScreen(
+                              title: translateAlarmTitle(g['title'] as String),
+                              contentType: cType, contentText: cText, fileUrl: cUrl,
+                            ),
+                          ));
+                        } : null,
                       ),
                     );
                   },
