@@ -326,6 +326,7 @@ Future<void> _scheduleLocalAlarms(
       int duration = startDuration;
       String category = 'namaz';
       if (type == 'end_reminder') {
+        // FIX: Isha ka end reminder ab locally bhi schedule hoga (pehle skip hota tha)
         at = at.subtract(Duration(minutes: endMinutesBefore));
         duration = endDuration;
         // Kitne minute mein namaz khatam ho rahi hai, ye title ke saath jod
@@ -349,7 +350,9 @@ Future<void> _scheduleLocalAlarms(
       if (!at.isAfter(now.add(const Duration(seconds: 20)))) continue;
       if (at.isAfter(now.add(const Duration(hours: 50)))) continue;
 
-      final int id = idFromString('local_${raw['id']}');
+      // FIX: ID collision se bachne ke liye 'type' bhi ID mein add kiya
+      // (pehle Fajr Start aur Isha End ka ID same ban jaata tha jab waqt same ho)
+      final int id = idFromString('local_${type}_${raw['id']}');
       newIds.add(id);
       newRecords.add({'id': id, 'title': _normTitle(title), 'at': at.millisecondsSinceEpoch});
 
