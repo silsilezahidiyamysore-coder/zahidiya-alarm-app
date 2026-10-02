@@ -21,6 +21,7 @@ import 'package:url_launcher/url_launcher.dart';
 const String scheduleUrlBase = 'https://zahidiya-mysore.pages.dev/api/get-alarm-schedule';
 const String saveFcmTokenUrl = 'https://zahidiya-mysore.pages.dev/api/save-fcm-token';
 const String websiteUrl = 'https://zahidiya-mysore.pages.dev';
+const String dailySyncTaskName = 'zahidiyaDailyAlarmSync';
 
 String currentUserRole = 'mureed';
 String currentUserName = '';
@@ -443,10 +444,10 @@ Future<void> main() async {
 
 final navigatorKey = GlobalKey<NavigatorState>();
 
-// ---------- LANGUAGE (with ValueNotifier for rebuild) ----------
+// ---------- LANGUAGE ----------
 class AppLang {
   static String current = 'ur';
-  static final ValueNotifier<int> notifier = ValueNotifier(0);
+  static final ValueNotifier<int> notifier = ValueNotifier<int>(0);
   static Future<void> load() async {
     final prefs = await SharedPreferences.getInstance();
     current = prefs.getString('app_lang') ?? 'ur';
@@ -528,7 +529,6 @@ class AppUser {
     currentUserMobile = prefs.getString('mobile') ?? '';
     currentUserPassword = prefs.getString('password') ?? '';
     currentUserRole = prefs.getString('role') ?? 'mureed';
-    currentUserName = name;
   }
   static Future<void> save(String newName) async {
     name = newName;
@@ -555,8 +555,7 @@ const Map<String, Map<String, String>> kStrings = {
     'lang_toggle': '🌐 اردو',
     'prayer_start_label': 'Start', 'prayer_end_label': 'End', 'active_now_label': '🟢 Now',
     'minutes_left_suffix': 'minute mein', 'change_number_label': '✏️ Change mobile number',
-    'tab_home': '🏠 Home', 'tab_website': '🌐 Website', 'tab_admin': '⚙️ Admin',
-    'password_label': 'Password',
+    'tab_home': 'Home', 'tab_website': 'Website', 'tab_admin': 'Admin',
   },
   'ur': {
     'app_title': 'سلسلہ زاہدیہ الارم', 'mobile_label': 'موبائل نمبر',
@@ -574,8 +573,7 @@ const Map<String, Map<String, String>> kStrings = {
     'lang_toggle': '🌐 English',
     'prayer_start_label': 'شروع', 'prayer_end_label': 'ختم', 'active_now_label': '🟢 ابھی',
     'minutes_left_suffix': 'منٹ میں', 'change_number_label': '✏️ موبائل نمبر تبدیل کریں',
-    'tab_home': '🏠 ہوم', 'tab_website': '🌐 ویب سائٹ', 'tab_admin': '⚙️ ایڈمن',
-    'password_label': 'پاس ورڈ',
+    'tab_home': 'ہوم', 'tab_website': 'ویب سائٹ', 'tab_admin': 'ایڈمن',
   },
 };
 
@@ -727,23 +725,12 @@ class _MainTabScreenState extends State<MainTabScreen> {
   void initState() {
     super.initState();
     _initWebView();
-    AppLang.notifier.addListener(_onLangChanged);
-  }
-
-  @override
-  void dispose() {
-    AppLang.notifier.removeListener(_onLangChanged);
-    super.dispose();
-  }
-
-  void _onLangChanged() {
-    if (mounted) setState(() {});
   }
 
   void _initWebView() {
     _webController = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
-      ..setBackgroundColor(const Color(0xFF0F3D2E))
+      ..setBackgroundColor(Colors.white)
       ..setNavigationDelegate(NavigationDelegate(
         onPageStarted: (url) => setState(() => _webLoading = true),
         onPageFinished: (url) async {
@@ -825,6 +812,9 @@ class _MainTabScreenState extends State<MainTabScreen> {
 
   @override
   Widget build(BuildContext context) {
+    return ValueListenableBuilder<int>(
+      valueListenable: AppLang.notifier,
+      builder: (context, _, __) {
     final List<BottomNavigationBarItem> items = [
       BottomNavigationBarItem(
         icon: const Icon(Icons.home, size: 22),
@@ -890,38 +880,36 @@ class _MainTabScreenState extends State<MainTabScreen> {
         ),
       ),
     );
+      },
+    );
   }
 
   Widget _buildWebViewScreen() {
-    // SafeArea ensures header doesn't go behind status bar
     return SafeArea(
       top: true,
       bottom: false,
       child: Stack(
         children: [
           if (_webController != null) WebViewWidget(controller: _webController!),
-          if (_webLoading)
-            const Positioned.fill(
-              child: Center(
-                child: CircularProgressIndicator(color: Colors.green),
-              ),
-            ),
+          if (_webLoading) const Center(child: CircularProgressIndicator()),
           Positioned(
-            top: 8, left: 8,
-            child: Material(
-              color: Colors.black54,
-              borderRadius: BorderRadius.circular(20),
-              child: InkWell(
-                onTap: () async {
-                  if (await _webController?.canGoBack() ?? false) {
-                    _webController?.goBack();
-                  } else {
-                    setState(() => _currentIndex = 0);
-                  }
-                },
-                child: const Padding(
-                  padding: EdgeInsets.all(8.0),
-                  child: Icon(Icons.arrow_back, color: Colors.white),
+            top: 40, left: 8,
+            child: SafeArea(
+              child: Material(
+                color: Colors.black54,
+                borderRadius: BorderRadius.circular(20),
+                child: InkWell(
+                  onTap: () async {
+                    if (await _webController?.canGoBack() ?? false) {
+                      _webController?.goBack();
+                    } else {
+                      setState(() => _currentIndex = 0);
+                    }
+                  },
+                  child: const Padding(
+                    padding: EdgeInsets.all(8.0),
+                    child: Icon(Icons.arrow_back, color: Colors.white),
+                  ),
                 ),
               ),
             ),
@@ -1093,7 +1081,7 @@ class AlarmRingingScreen extends StatelessWidget {
 }
 
 // ============================================================
-// ============ HOME SCREEN ===================================
+// ============ HOME SCREEN (Alarm) ==========================
 // ============================================================
 
 class HomeScreen extends StatefulWidget {
@@ -1167,7 +1155,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     _requestPermissions();
     _loadSavedMobile();
     _setupFCM();
-    AppLang.notifier.addListener(_onLangChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final ringing = Alarm.ringing.value;
       if (ringing.alarms.isNotEmpty) _openRingingScreen(ringing.alarms.first.notificationSettings.body);
@@ -1195,16 +1182,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     });
   }
 
-  void _onLangChanged() {
-    if (mounted) setState(() {});
-  }
-
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _highlightRefreshTimer?.cancel();
     _ringingSub?.cancel();
-    AppLang.notifier.removeListener(_onLangChanged);
     super.dispose();
   }
 
@@ -1246,7 +1228,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     if (saved != null) {
       _mobileController.text = saved;
       _passwordController.text = prefs.getString('password') ?? '';
-      currentUserRole = prefs.getString('role') ?? 'mureed';
       setState(() => _showMobileField = false);
       _fetchAndScheduleAlarms();
     }
@@ -1375,7 +1356,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               TextField(
                 controller: _passwordController,
                 obscureText: true,
-                decoration: InputDecoration(labelText: tr('password_label'), labelStyle: appFont(), border: const OutlineInputBorder()),
+                decoration: const InputDecoration(labelText: 'Password', border: OutlineInputBorder()),
               ),
               const SizedBox(height: 16),
               ElevatedButton(
