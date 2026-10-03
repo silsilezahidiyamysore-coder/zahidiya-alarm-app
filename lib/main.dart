@@ -639,8 +639,7 @@ const Map<String, Map<String, String>> kStrings = {
     'event_view_hint': 'Tap to view',
     'no_event_content': 'Nothing to show.',
     'band_karo_btn': '🛑 Stop',
-    'default_status':
-        'Enter your mobile number and tap "Set Alarms".',
+    'default_status': 'Enter your mobile number and tap "Set Alarms".',
     'status_empty_mobile': 'First enter your mobile number.',
     'status_not_registered': 'This mobile number is not registered.',
     'status_verify_error': 'Problem verifying, please check internet.',
@@ -666,8 +665,7 @@ const Map<String, Map<String, String>> kStrings = {
     'event_view_hint': 'دیکھنے کے لیے ٹچ کریں',
     'no_event_content': 'کچھ نہیں ہے۔',
     'band_karo_btn': '🛑 بند کریں',
-    'default_status':
-        'موبائل نمبر ڈال کر "الارمز سیٹ کریں" دبائیں۔',
+    'default_status': 'موبائل نمبر ڈال کر "الارمز سیٹ کریں" دبائیں۔',
     'status_empty_mobile': 'پہلے موبائل نمبر ڈالیں۔',
     'status_not_registered': 'یہ نمبر رجسٹرڈ نہیں ہے۔',
     'status_verify_error': 'تصدیق میں مسئلہ ہوا۔',
@@ -680,9 +678,9 @@ const Map<String, Map<String, String>> kStrings = {
     'active_now_label': '🟢 ابھی',
     'minutes_left_suffix': 'منٹ میں',
     'change_number_label': '✏️ موبائل نمبر تبدیل کریں',
-    'tab_home': 'ہوم',
-    'tab_website': 'ویب سائٹ',
-    'tab_admin': 'ایڈمن',
+    'tab_home': 'Home',
+    'tab_website': 'Website',
+    'tab_admin': 'Admin',
   },
 };
 
@@ -920,17 +918,8 @@ class _MainTabScreenState extends State<MainTabScreen> {
     } catch (_) {}
   }
 
-  // Bottom nav label style helpers (Urdu Nastaliq + English bold)
+  // ============ BOTTOM NAV LABEL STYLES (sirf English) ============
   TextStyle _navSelectedLabelStyle() {
-    if (AppLang.current == 'ur') {
-      return GoogleFonts.notoNastaliqUrdu(
-        textStyle: const TextStyle(
-          fontSize: 18,
-          fontWeight: FontWeight.bold,
-          height: 1.8,
-        ),
-      );
-    }
     return const TextStyle(
       fontSize: 16,
       fontWeight: FontWeight.bold,
@@ -938,25 +927,18 @@ class _MainTabScreenState extends State<MainTabScreen> {
   }
 
   TextStyle _navUnselectedLabelStyle() {
-    if (AppLang.current == 'ur') {
-      return GoogleFonts.notoNastaliqUrdu(
-        textStyle: const TextStyle(
-          fontSize: 16,
-          height: 1.8,
-        ),
-      );
-    }
     return const TextStyle(
       fontSize: 14,
+      fontWeight: FontWeight.w500,
     );
   }
 
   @override
   Widget build(BuildContext context) {
+    // === Bottom nav labels — hamesha English ===
     final List<BottomNavigationBarItem> items = [
-      BottomNavigationBarItem(icon: const Icon(Icons.home), label: tr('tab_home')),
-      BottomNavigationBarItem(
-          icon: const Icon(Icons.language), label: tr('tab_website')),
+      const BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Home'),
+      const BottomNavigationBarItem(icon: Icon(Icons.language), label: 'Website'),
     ];
     final List<Widget> pages = [
       HomeScreen(key: _homeKey, onRoleChanged: onRoleChanged),
@@ -964,9 +946,9 @@ class _MainTabScreenState extends State<MainTabScreen> {
     ];
 
     if (currentUserRole == 'admin') {
-      items.add(BottomNavigationBarItem(
-        icon: const Icon(Icons.admin_panel_settings),
-        label: tr('tab_admin'),
+      items.add(const BottomNavigationBarItem(
+        icon: Icon(Icons.admin_panel_settings),
+        label: 'Admin',
       ));
       pages.add(_buildWebTab(_adminController, _adminLoading));
     }
@@ -1001,7 +983,7 @@ class _MainTabScreenState extends State<MainTabScreen> {
             selectedItemColor: Colors.green[800],
             unselectedItemColor: Colors.grey[600],
             type: BottomNavigationBarType.fixed,
-            selectedFontSize: 18,
+            selectedFontSize: 16,
             unselectedFontSize: 14,
             selectedLabelStyle: _navSelectedLabelStyle(),
             unselectedLabelStyle: _navUnselectedLabelStyle(),
