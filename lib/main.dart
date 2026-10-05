@@ -29,6 +29,53 @@ const String dailySyncTaskName = 'zahidiyaDailyAlarmSync';
 String currentUserRole = 'mureed'; // 'admin' ya 'mureed'
 String currentUserName = '';
 
+// ============ PRAYER MESSAGES CACHE (server se aata hai) ============
+Map<String, Map<String, String>> _prayerMessagesCache = {};
+const String _kPrayerMessagesPrefs = 'prayer_messages_cache_v1';
+
+Future<void> fetchPrayerMessages() async {
+  try {
+    final res = await http.get(
+      Uri.parse('$websiteUrl/api/get-prayer-messages'),
+    ).timeout(const Duration(seconds: 15));
+
+    if (res.statusCode != 200) return;
+    final data = jsonDecode(res.body);
+    if (data['success'] != true) return;
+
+    final Map<String, Map<String, String>> newCache = {};
+    for (final m in (data['messages'] as List)) {
+      final String key = '${m['prayer']}_${m['msg_type']}';
+      newCache[key] = {
+        'ur': (m['message_ur'] ?? '').toString(),
+        'en': (m['message_en'] ?? '').toString(),
+      };
+    }
+    _prayerMessagesCache = newCache;
+
+    // Save to SharedPreferences
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_kPrayerMessagesPrefs, jsonEncode(newCache));
+  } catch (_) {}
+}
+
+Future<void> _loadPrayerMessagesFromCache() async {
+  try {
+    final prefs = await SharedPreferences.getInstance();
+    final saved = prefs.getString(_kPrayerMessagesPrefs);
+    if (saved == null) return;
+    final decoded = jsonDecode(saved) as Map<String, dynamic>;
+    final Map<String, Map<String, String>> loaded = {};
+    decoded.forEach((k, v) {
+      loaded[k] = {
+        'ur': (v['ur'] ?? '').toString(),
+        'en': (v['en'] ?? '').toString(),
+      };
+    });
+    _prayerMessagesCache = loaded;
+  } catch (_) {}
+}
+
 // ============ RINGTONE FILE HELPERS ============
 String _toneFileName(String category) {
   switch (category) {
@@ -151,6 +198,7 @@ Future<void> _scheduleStopAlarm(
 Future<List<Map<String, dynamic>>> fetchAndScheduleForMobile(String mobile,
     {bool force = false}) async {
   await Alarm.init();
+  fetchPrayerMessages(); // Schedule fetch hone par messages bhi refresh karo
   final uri = Uri.parse('$scheduleUrlBase?mobile=$mobile');
   final response = await http.get(uri).timeout(const Duration(seconds: 25));
   if (response.statusCode != 200)
@@ -509,6 +557,10 @@ Future<void> main() async {
   await AppUser.load();
   await AppConfig.load();
 
+  // ============ PRAYER MESSAGES LOAD (cache + fresh fetch) ============
+  await _loadPrayerMessagesFromCache();  // cache se load
+  fetchPrayerMessages();                 // background mein fresh fetch
+
   // ============ ROLE LOAD (app restart pe Admin tab yaad rahe) ============
   try {
     final _prefs = await SharedPreferences.getInstance();
@@ -699,12 +751,32 @@ String prayerLabel(String name) =>
     AppLang.current == 'ur' ? (_prayerNameUr[name] ?? name) : name;
 
 String prayerStartMessage(String prayerName) {
+  // Pehle server se aaya message check karo
+  final cached = _prayerMessagesCache['${prayerName}_start'];
+  if (cached != null) {
+    final msg = AppLang.current == 'ur' ? cached['ur'] : cached['en'];
+    if (msg != null && msg.trim().isNotEmpty) return msg;
+  }
+  // Fallback: purana hardcoded
   final name = prayerLabel(prayerName);
   if (AppLang.current == 'ur') return '🕌 $name کی نماز کا وقت اب شروع ہو گیا ہے';
   return '🕌 $name ki namaz ka waqt ab shuru ho gaya hai';
 }
 
 String prayerEndMessage(String prayerName, {int? minutesLeft}) {
+  // Pehle server se aaya message check karo
+  final cached = _prayerMessagesCache['${prayerName}_end'];
+  if (cached != null) {
+    final msg = AppLang.current == 'ur' ? cached['ur'] : cached['en'];
+    if (msg != null && msg.trim().isNotEmpty) {
+      // Agar message mein {minutes} placeholder hai to replace karo
+      if (minutesLeft != null && minutesLeft > 0) {
+        return msg.replaceAll('{minutes}', '$minutesLeft');
+      }
+      return msg;
+    }
+  }
+  // Fallback: purana hardcoded
   final name = prayerLabel(prayerName);
   if (AppLang.current == 'ur') {
     final minsTxt = (minutesLeft != null && minutesLeft > 0)
