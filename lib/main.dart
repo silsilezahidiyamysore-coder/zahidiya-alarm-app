@@ -1491,8 +1491,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text(AppUser.displayName.trim().isNotEmpty ? AppUser.displayName : tr('app_title'),
-            style: appFont()),
+        // ✅ FIX: AppBar mein hamesha app title — naam nahi
+        title: Text(tr('app_title'), style: appFont()),
         backgroundColor: Colors.green,
         foregroundColor: Colors.white,
         actions: [
