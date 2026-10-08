@@ -102,7 +102,6 @@ Future<void> fetchAlarmSettings() async {
     _alarmSettingsCache = newCache;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_kAlarmSettingsPrefs, jsonEncode(newCache));
-    // Update AppConfig too
     if (newCache['end_reminder_minutes_before'] != null) {
       await AppConfig.saveEndMinutes(newCache['end_reminder_minutes_before']!);
     }
@@ -260,7 +259,6 @@ Future<void> _scheduleStopAlarm(
 Future<List<Map<String, dynamic>>> fetchAndScheduleForMobile(String mobile,
     {bool force = false}) async {
   await Alarm.init();
-  // Refresh all caches
   fetchPrayerMessages();
   fetchPrayerNames();
   fetchAlarmSettings();
@@ -298,7 +296,6 @@ Future<List<Map<String, dynamic>>> fetchAndScheduleForMobile(String mobile,
       }
     } catch (_) {}
 
-    // Use admin settings for defaults, fall back to server-schedule values
     final int fetchedEndMinutesBefore =
         _alarmSettingsCache['end_reminder_minutes_before'] ??
         (data['end_reminder_minutes_before'] as num?)?.toInt() ?? 10;
@@ -623,10 +620,8 @@ Future<void> main() async {
   await AppUser.load();
   await AppConfig.load();
 
-  // Load all caches (messages + names + settings)
   await _loadAllCaches();
 
-  // Background fresh fetch
   fetchPrayerMessages();
   fetchPrayerNames();
   fetchAlarmSettings();
@@ -644,7 +639,6 @@ Future<void> main() async {
 
 final navigatorKey = GlobalKey<NavigatorState>();
 
-// ---------- LANGUAGE ----------
 class AppLang {
   static String current = 'ur';
   static Future<void> load() async {
@@ -801,7 +795,6 @@ const Map<String, String> _prayerNameUr = {
   'Maghrib': 'مغرب', 'Isha': 'عشاء',
 };
 
-// UPDATED: use server names if available
 String prayerLabel(String name) {
   final cached = _prayerNamesCache[name];
   if (cached != null) {
