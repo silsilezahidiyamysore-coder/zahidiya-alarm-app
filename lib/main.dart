@@ -41,6 +41,10 @@ const String _kPrayerNamesPrefs = 'prayer_names_cache_v1';
 Map<String, int> _alarmSettingsCache = {};
 const String _kAlarmSettingsPrefs = 'alarm_settings_cache_v1';
 
+// ============ MENU ITEMS CACHE ============
+List<Map<String, dynamic>> _menuItemsCache = [];
+const String _kMenuItemsPrefs = 'menu_items_cache_v1';
+
 Future<void> fetchPrayerMessages() async {
   try {
     final res = await http.get(
@@ -108,6 +112,21 @@ Future<void> fetchAlarmSettings() async {
   } catch (_) {}
 }
 
+Future<void> fetchMenuItems() async {
+  try {
+    final res = await http.get(
+      Uri.parse('$websiteUrl/api/get-menu-items'),
+    ).timeout(const Duration(seconds: 15));
+    if (res.statusCode != 200) return;
+    final data = jsonDecode(res.body);
+    if (data['success'] != true) return;
+    final List<dynamic> items = data['items'] ?? [];
+    _menuItemsCache = items.map((e) => Map<String, dynamic>.from(e)).toList();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_kMenuItemsPrefs, jsonEncode(_menuItemsCache));
+  } catch (_) {}
+}
+
 Future<void> _loadAllCaches() async {
   try {
     final prefs = await SharedPreferences.getInstance();
@@ -141,6 +160,12 @@ Future<void> _loadAllCaches() async {
         final int? parsed = int.tryParse(v.toString());
         if (parsed != null) _alarmSettingsCache[k] = parsed;
       });
+    }
+
+    final menuJson = prefs.getString(_kMenuItemsPrefs);
+    if (menuJson != null) {
+      final decoded = jsonDecode(menuJson) as List;
+      _menuItemsCache = decoded.map((e) => Map<String, dynamic>.from(e)).toList();
     }
   } catch (_) {}
 }
@@ -262,6 +287,7 @@ Future<List<Map<String, dynamic>>> fetchAndScheduleForMobile(String mobile,
   fetchPrayerMessages();
   fetchPrayerNames();
   fetchAlarmSettings();
+  fetchMenuItems();
 
   final uri = Uri.parse('$scheduleUrlBase?mobile=$mobile');
   final response = await http.get(uri).timeout(const Duration(seconds: 25));
@@ -625,6 +651,7 @@ Future<void> main() async {
   fetchPrayerMessages();
   fetchPrayerNames();
   fetchAlarmSettings();
+  fetchMenuItems();
 
   try {
     final _prefs = await SharedPreferences.getInstance();
@@ -758,6 +785,7 @@ const Map<String, Map<String, String>> kStrings = {
     'tab_home': 'Home',
     'tab_website': 'Website',
     'tab_admin': 'Admin',
+    'quick_menu': '📋 Quick Menu',
   },
   'ur': {
     'app_title': 'سلسلہ زاہدیہ الارم',
@@ -784,6 +812,7 @@ const Map<String, Map<String, String>> kStrings = {
     'tab_home': 'Home',
     'tab_website': 'Website',
     'tab_admin': 'Admin',
+    'quick_menu': '📋 فوری مینو',
   },
 };
 
@@ -1192,6 +1221,66 @@ class _EventContentScreenState extends State<EventContentScreen> {
 }
 
 // ============================================================
+// ============ MENU WEBVIEW SCREEN =========================
+// ============================================================
+
+class MenuWebViewScreen extends StatefulWidget {
+  final String title;
+  final String url;
+  const MenuWebViewScreen({super.key, required this.title, required this.url});
+  @override
+  State<MenuWebViewScreen> createState() => _MenuWebViewScreenState();
+}
+
+class _MenuWebViewScreenState extends State<MenuWebViewScreen> {
+  WebViewController? _controller;
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = WebViewController()
+      ..setJavaScriptMode(JavaScriptMode.unrestricted)
+      ..setBackgroundColor(Colors.white)
+      ..setNavigationDelegate(NavigationDelegate(
+        onPageStarted: (_) => setState(() => _loading = true),
+        onPageFinished: (_) => setState(() => _loading = false),
+        onNavigationRequest: (request) {
+          final u = request.url;
+          if (u.startsWith('http://') || u.startsWith('https://')) {
+            if (!u.startsWith(websiteUrl) && !u.contains('zahidiya-mysore')) {
+              try {
+                launchUrl(Uri.parse(u), mode: LaunchMode.externalApplication);
+              } catch (_) {}
+              return NavigationDecision.prevent;
+            }
+          }
+          return NavigationDecision.navigate;
+        },
+      ))
+      ..loadRequest(Uri.parse(widget.url));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: MixedText(widget.title,
+            style: const TextStyle(color: Colors.white, fontSize: 18)),
+        backgroundColor: Colors.green,
+        iconTheme: const IconThemeData(color: Colors.white),
+      ),
+      body: Stack(
+        children: [
+          if (_controller != null) WebViewWidget(controller: _controller!),
+          if (_loading) const Center(child: CircularProgressIndicator()),
+        ],
+      ),
+    );
+  }
+}
+
+// ============================================================
 // ============ ALARM RINGING SCREEN =========================
 // ============================================================
 
@@ -1480,6 +1569,21 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     }
   }
 
+  Future<void> _handleMenuTap(String url, String openIn, String title) async {
+    if (url.isEmpty) return;
+    final fullUrl = url.startsWith('/') ? '$websiteUrl$url' : url;
+    if (openIn == 'external') {
+      try {
+        await launchUrl(Uri.parse(fullUrl), mode: LaunchMode.externalApplication);
+      } catch (_) {}
+    } else {
+      if (!mounted) return;
+      Navigator.of(context).push(MaterialPageRoute(
+        builder: (_) => MenuWebViewScreen(title: title, url: fullUrl),
+      ));
+    }
+  }
+
   String _formatTime(DateTime dt) {
     final h = dt.hour % 12 == 0 ? 12 : dt.hour % 12;
     final m = dt.minute.toString().padLeft(2, '0');
@@ -1491,7 +1595,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        // ✅ FIX: AppBar mein hamesha app title — naam nahi
         title: Text(tr('app_title'), style: appFont()),
         backgroundColor: Colors.green,
         foregroundColor: Colors.white,
@@ -1566,7 +1669,76 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               child: Text(tr('overlay_btn'), style: appFont()),
             ),
             const SizedBox(height: 16),
-            Text(_status, textAlign: TextAlign.center, style: appFont(const TextStyle(fontSize: 15))),
+            if (_menuItemsCache.isNotEmpty) ...[
+              Align(
+                alignment: Alignment.centerRight,
+                child: Text(
+                  tr('quick_menu'),
+                  style: appFont(const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 14,
+                      color: Colors.green)),
+                ),
+              ),
+              const SizedBox(height: 8),
+              GridView.builder(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: 3,
+                  crossAxisSpacing: 8,
+                  mainAxisSpacing: 8,
+                  childAspectRatio: 1.05,
+                ),
+                itemCount: _menuItemsCache.length,
+                itemBuilder: (context, i) {
+                  final item = _menuItemsCache[i];
+                  final urLabel = (item['label_ur'] ?? '').toString();
+                  final enLabel = (item['label_en'] ?? '').toString();
+                  final icon = (item['icon'] ?? '📌').toString();
+                  final url = (item['url'] ?? '').toString();
+                  final openIn = (item['open_in'] ?? 'webview').toString();
+                  final label = AppLang.current == 'ur' && urLabel.isNotEmpty
+                      ? urLabel
+                      : (enLabel.isNotEmpty ? enLabel : urLabel);
+                  return InkWell(
+                    onTap: () => _handleMenuTap(url, openIn, label),
+                    borderRadius: BorderRadius.circular(10),
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: Colors.green.shade200, width: 1.5),
+                      ),
+                      padding: const EdgeInsets.all(6),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Text(icon, style: const TextStyle(fontSize: 26)),
+                          const SizedBox(height: 4),
+                          Flexible(
+                            child: Text(
+                              label,
+                              textAlign: TextAlign.center,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: appFont(const TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.green)),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                },
+              ),
+              const SizedBox(height: 12),
+            ],
+            Text(_status,
+                textAlign: TextAlign.center,
+                style: appFont(const TextStyle(fontSize: 15))),
             const SizedBox(height: 16),
             Expanded(
               child: Builder(builder: (context) {
