@@ -28,6 +28,7 @@ const String dailySyncTaskName = 'zahidiyaDailyAlarmSync';
 // ============ GLOBAL USER INFO ============
 String currentUserRole = 'mureed';
 String currentUserName = '';
+String currentUserMobile = '';
 
 // ============ PRAYER MESSAGES CACHE ============
 Map<String, Map<String, String>> _prayerMessagesCache = {};
@@ -167,6 +168,8 @@ Future<void> _loadAllCaches() async {
       final decoded = jsonDecode(menuJson) as List;
       _menuItemsCache = decoded.map((e) => Map<String, dynamic>.from(e)).toList();
     }
+
+    currentUserMobile = prefs.getString('mobile') ?? '';
   } catch (_) {}
 }
 
@@ -288,6 +291,8 @@ Future<List<Map<String, dynamic>>> fetchAndScheduleForMobile(String mobile,
   fetchPrayerNames();
   fetchAlarmSettings();
   fetchMenuItems();
+
+  currentUserMobile = mobile;
 
   final uri = Uri.parse('$scheduleUrlBase?mobile=$mobile');
   final response = await http.get(uri).timeout(const Duration(seconds: 25));
@@ -1239,6 +1244,14 @@ class _MenuWebViewScreenState extends State<MenuWebViewScreen> {
   @override
   void initState() {
     super.initState();
+
+    // URL mein auto_mobile param add karo (agar user mobile available ho)
+    String finalUrl = widget.url;
+    if (currentUserMobile.isNotEmpty) {
+      final sep = finalUrl.contains('?') ? '&' : '?';
+      finalUrl = '$finalUrl${sep}auto_mobile=$currentUserMobile';
+    }
+
     _controller = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
       ..setBackgroundColor(Colors.white)
@@ -1258,7 +1271,7 @@ class _MenuWebViewScreenState extends State<MenuWebViewScreen> {
           return NavigationDecision.navigate;
         },
       ))
-      ..loadRequest(Uri.parse(widget.url));
+      ..loadRequest(Uri.parse(finalUrl));
   }
 
   @override
@@ -1492,6 +1505,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     final saved = prefs.getString('mobile');
     if (saved != null) {
       _mobileController.text = saved;
+      currentUserMobile = saved;
       setState(() => _showMobileField = false);
       _fetchAndScheduleAlarms();
     }
@@ -1526,6 +1540,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
       currentUserRole = verifyData['role']?.toString() ?? 'mureed';
       currentUserName = verifyData['name']?.toString() ?? '';
+      currentUserMobile = mobile;
       final _p = await SharedPreferences.getInstance();
       await _p.setString('role', currentUserRole);
       widget.onRoleChanged?.call();
@@ -1611,139 +1626,142 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       ),
       body: Padding(
         padding: const EdgeInsets.all(20.0),
-        child: Column(
-          children: [
-            if (_showMobileField) ...[
-              TextField(
-                controller: _mobileController,
-                keyboardType: TextInputType.phone,
-                decoration: InputDecoration(
-                    labelText: tr('mobile_label'), labelStyle: appFont(),
-                    border: const OutlineInputBorder()),
+        child: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              if (_showMobileField) ...[
+                TextField(
+                  controller: _mobileController,
+                  keyboardType: TextInputType.phone,
+                  decoration: InputDecoration(
+                      labelText: tr('mobile_label'), labelStyle: appFont(),
+                      border: const OutlineInputBorder()),
+                ),
+                const SizedBox(height: 16),
+                ElevatedButton(
+                  onPressed: _loading ? null : _fetchAndScheduleAlarms,
+                  style: ElevatedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    backgroundColor: Colors.green, foregroundColor: Colors.white,
+                    minimumSize: const Size(double.infinity, 48),
+                  ),
+                  child: _loading
+                      ? const SizedBox(height: 20, width: 20,
+                          child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                      : Text(tr('set_alarms_btn'), style: appFont()),
+                ),
+              ] else ...[
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(vertical: 18, horizontal: 12),
+                  decoration: BoxDecoration(
+                      border: Border.all(color: Colors.green, width: 1.5),
+                      borderRadius: BorderRadius.circular(8)),
+                  child: MixedText(
+                    AppUser.displayName.trim().isNotEmpty ? AppUser.displayName : _mobileController.text,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.green),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Align(
+                  alignment: Alignment.center,
+                  child: TextButton(
+                    onPressed: () => setState(() => _showMobileField = true),
+                    child: Text(tr('change_number_label'), style: appFont(const TextStyle(fontSize: 13))),
+                  ),
+                ),
+              ],
+              const SizedBox(height: 10),
+              OutlinedButton(
+                onPressed: () async { await openAppSettings(); },
+                style: OutlinedButton.styleFrom(minimumSize: const Size(double.infinity, 44)),
+                child: Text(tr('battery_btn'), style: appFont()),
+              ),
+              const SizedBox(height: 10),
+              OutlinedButton(
+                onPressed: () async { await Permission.systemAlertWindow.request(); },
+                style: OutlinedButton.styleFrom(minimumSize: const Size(double.infinity, 44)),
+                child: Text(tr('overlay_btn'), style: appFont()),
               ),
               const SizedBox(height: 16),
-              ElevatedButton(
-                onPressed: _loading ? null : _fetchAndScheduleAlarms,
-                style: ElevatedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  backgroundColor: Colors.green, foregroundColor: Colors.white,
-                  minimumSize: const Size(double.infinity, 48),
+              if (_menuItemsCache.isNotEmpty) ...[
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: Text(
+                    tr('quick_menu'),
+                    style: appFont(const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 14,
+                        color: Colors.green)),
+                  ),
                 ),
-                child: _loading
-                    ? const SizedBox(height: 20, width: 20,
-                        child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                    : Text(tr('set_alarms_btn'), style: appFont()),
-              ),
-            ] else ...[
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.symmetric(vertical: 18, horizontal: 12),
-                decoration: BoxDecoration(
-                    border: Border.all(color: Colors.green, width: 1.5),
-                    borderRadius: BorderRadius.circular(8)),
-                child: MixedText(
-                  AppUser.displayName.trim().isNotEmpty ? AppUser.displayName : _mobileController.text,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.green),
-                ),
-              ),
-              const SizedBox(height: 8),
-              Align(
-                alignment: Alignment.center,
-                child: TextButton(
-                  onPressed: () => setState(() => _showMobileField = true),
-                  child: Text(tr('change_number_label'), style: appFont(const TextStyle(fontSize: 13))),
-                ),
-              ),
-            ],
-            const SizedBox(height: 10),
-            OutlinedButton(
-              onPressed: () async { await openAppSettings(); },
-              style: OutlinedButton.styleFrom(minimumSize: const Size(double.infinity, 44)),
-              child: Text(tr('battery_btn'), style: appFont()),
-            ),
-            const SizedBox(height: 10),
-            OutlinedButton(
-              onPressed: () async { await Permission.systemAlertWindow.request(); },
-              style: OutlinedButton.styleFrom(minimumSize: const Size(double.infinity, 44)),
-              child: Text(tr('overlay_btn'), style: appFont()),
-            ),
-            const SizedBox(height: 16),
-            if (_menuItemsCache.isNotEmpty) ...[
-              Align(
-                alignment: Alignment.centerRight,
-                child: Text(
-                  tr('quick_menu'),
-                  style: appFont(const TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 14,
-                      color: Colors.green)),
-                ),
-              ),
-              const SizedBox(height: 8),
-              GridView.builder(
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: 3,
-                  crossAxisSpacing: 8,
-                  mainAxisSpacing: 8,
-                  childAspectRatio: 1.05,
-                ),
-                itemCount: _menuItemsCache.length,
-                itemBuilder: (context, i) {
-                  final item = _menuItemsCache[i];
-                  final urLabel = (item['label_ur'] ?? '').toString();
-                  final enLabel = (item['label_en'] ?? '').toString();
-                  final icon = (item['icon'] ?? '📌').toString();
-                  final url = (item['url'] ?? '').toString();
-                  final openIn = (item['open_in'] ?? 'webview').toString();
-                  final label = AppLang.current == 'ur' && urLabel.isNotEmpty
-                      ? urLabel
-                      : (enLabel.isNotEmpty ? enLabel : urLabel);
-                  return InkWell(
-                    onTap: () => _handleMenuTap(url, openIn, label),
-                    borderRadius: BorderRadius.circular(10),
-                    child: Container(
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: Colors.green.shade200, width: 1.5),
-                      ),
-                      padding: const EdgeInsets.all(6),
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Text(icon, style: const TextStyle(fontSize: 26)),
-                          const SizedBox(height: 4),
-                          Flexible(
-                            child: Text(
-                              label,
-                              textAlign: TextAlign.center,
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                              style: appFont(const TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.green)),
+                const SizedBox(height: 8),
+                GridView.builder(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 3,
+                    crossAxisSpacing: 8,
+                    mainAxisSpacing: 8,
+                    childAspectRatio: 1.05,
+                  ),
+                  itemCount: _menuItemsCache.length,
+                  itemBuilder: (context, i) {
+                    final item = _menuItemsCache[i];
+                    final urLabel = (item['label_ur'] ?? '').toString();
+                    final enLabel = (item['label_en'] ?? '').toString();
+                    final icon = (item['icon'] ?? '📌').toString();
+                    final url = (item['url'] ?? '').toString();
+                    final openIn = (item['open_in'] ?? 'webview').toString();
+                    final label = AppLang.current == 'ur' && urLabel.isNotEmpty
+                        ? urLabel
+                        : (enLabel.isNotEmpty ? enLabel : urLabel);
+                    return InkWell(
+                      onTap: () => _handleMenuTap(url, openIn, label),
+                      borderRadius: BorderRadius.circular(10),
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: Colors.green.shade200, width: 1.5),
+                        ),
+                        padding: const EdgeInsets.all(6),
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Text(icon, style: const TextStyle(fontSize: 26)),
+                            const SizedBox(height: 4),
+                            Flexible(
+                              child: Text(
+                                label,
+                                textAlign: TextAlign.center,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: appFont(const TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.green)),
+                              ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
-                    ),
-                  );
-                },
-              ),
-              const SizedBox(height: 12),
-            ],
-            Text(_status,
-                textAlign: TextAlign.center,
-                style: appFont(const TextStyle(fontSize: 15))),
-            const SizedBox(height: 16),
-            Expanded(
-              child: Builder(builder: (context) {
+                    );
+                  },
+                ),
+                const SizedBox(height: 12),
+              ],
+              Text(_status,
+                  textAlign: TextAlign.center,
+                  style: appFont(const TextStyle(fontSize: 15))),
+              const SizedBox(height: 16),
+              Builder(builder: (context) {
                 final grouped = _groupScheduledItems(_scheduledItems);
                 return ListView.builder(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
                   itemCount: grouped.length,
                   itemBuilder: (context, index) {
                     final g = grouped[index];
@@ -1820,8 +1838,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                   },
                 );
               }),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
