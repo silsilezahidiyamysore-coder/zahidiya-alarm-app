@@ -614,10 +614,8 @@ Future<void> main() async {
 
   await _loadAllCaches();
 
-  fetchPrayerMessages();
-  fetchPrayerNames();
-  fetchAlarmSettings();
-  fetchMenuItems();
+   fetchAlarmSettings();
+  fetchRemoteCaches();
 
   try {
     final _prefs = await SharedPreferences.getInstance();
