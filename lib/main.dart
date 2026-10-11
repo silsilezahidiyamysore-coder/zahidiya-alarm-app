@@ -117,16 +117,7 @@ Future<void> _loadAllCaches() async {
 
   
 
-    final namesJson = prefs.getString(_kPrayerNamesPrefs);
-    if (namesJson != null) {
-      final decoded = jsonDecode(namesJson) as Map<String, dynamic>;
-      decoded.forEach((k, v) {
-        _prayerNamesCache[k] = {
-          'ur': (v['ur'] ?? '').toString(),
-          'en': (v['en'] ?? '').toString(),
-        };
-      });
-    }
+  
 
     final settingsJson = prefs.getString(_kAlarmSettingsPrefs);
     if (settingsJson != null) {
