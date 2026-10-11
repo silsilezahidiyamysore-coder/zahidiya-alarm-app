@@ -27,9 +27,7 @@ import 'core/caches.dart';
 Map<String, int> _alarmSettingsCache = {};
 const String _kAlarmSettingsPrefs = 'alarm_settings_cache_v1';
 
-// ============ MENU ITEMS CACHE ============
-List<Map<String, dynamic>> _menuItemsCache = [];
-const String _kMenuItemsPrefs = 'menu_items_cache_v1';
+
 
 Future<void> fetchPrayerMessages() async {
   try {
