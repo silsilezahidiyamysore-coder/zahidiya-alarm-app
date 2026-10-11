@@ -22,13 +22,6 @@ import 'core/app_config.dart';
 import 'core/caches.dart';
 
 
-// ============ PRAYER MESSAGES CACHE ============
-Map<String, Map<String, String>> _prayerMessagesCache = {};
-const String _kPrayerMessagesPrefs = 'prayer_messages_cache_v1';
-
-// ============ PRAYER NAMES CACHE ============
-Map<String, Map<String, String>> _prayerNamesCache = {};
-const String _kPrayerNamesPrefs = 'prayer_names_cache_v1';
 
 // ============ ALARM SETTINGS CACHE ============
 Map<String, int> _alarmSettingsCache = {};
