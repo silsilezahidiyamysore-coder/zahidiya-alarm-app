@@ -19,17 +19,7 @@ import 'package:webview_flutter/webview_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'core/app_config.dart';
-const String scheduleUrlBase =
-    'https://zahidiya-mysore.pages.dev/api/get-alarm-schedule';
-const String saveFcmTokenUrl =
-    'https://zahidiya-mysore.pages.dev/api/save-fcm-token';
-const String websiteUrl = 'https://zahidiya-mysore.pages.dev';
-const String dailySyncTaskName = 'zahidiyaDailyAlarmSync';
 
-// ============ GLOBAL USER INFO ============
-String currentUserRole = 'mureed';
-String currentUserName = '';
-String currentUserMobile = '';
 
 // ============ PRAYER MESSAGES CACHE ============
 Map<String, Map<String, String>> _prayerMessagesCache = {};
