@@ -128,11 +128,7 @@ Future<void> _loadAllCaches() async {
       });
     }
 
-    final menuJson = prefs.getString(_kMenuItemsPrefs);
-    if (menuJson != null) {
-      final decoded = jsonDecode(menuJson) as List;
-      _menuItemsCache = decoded.map((e) => Map<String, dynamic>.from(e)).toList();
-    }
+   
 
     currentUserMobile = prefs.getString('mobile') ?? '';
   } catch (_) {}
