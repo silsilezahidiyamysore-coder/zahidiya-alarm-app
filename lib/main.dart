@@ -18,16 +18,33 @@ import 'package:android_intent_plus/flag.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-import 'core/app_config.dart';
-import 'core/caches.dart';
+const String scheduleUrlBase =
+    'https://zahidiya-mysore.pages.dev/api/get-alarm-schedule';
+const String saveFcmTokenUrl =
+    'https://zahidiya-mysore.pages.dev/api/save-fcm-token';
+const String websiteUrl = 'https://zahidiya-mysore.pages.dev';
+const String dailySyncTaskName = 'zahidiyaDailyAlarmSync';
 
+// ============ GLOBAL USER INFO ============
+String currentUserRole = 'mureed';
+String currentUserName = '';
+String currentUserMobile = '';
 
+// ============ PRAYER MESSAGES CACHE ============
+Map<String, Map<String, String>> _prayerMessagesCache = {};
+const String _kPrayerMessagesPrefs = 'prayer_messages_cache_v1';
+
+// ============ PRAYER NAMES CACHE ============
+Map<String, Map<String, String>> _prayerNamesCache = {};
+const String _kPrayerNamesPrefs = 'prayer_names_cache_v1';
 
 // ============ ALARM SETTINGS CACHE ============
 Map<String, int> _alarmSettingsCache = {};
 const String _kAlarmSettingsPrefs = 'alarm_settings_cache_v1';
 
-
+// ============ MENU ITEMS CACHE ============
+List<Map<String, dynamic>> _menuItemsCache = [];
+const String _kMenuItemsPrefs = 'menu_items_cache_v1';
 
 Future<void> fetchPrayerMessages() async {
   try {
@@ -115,9 +132,27 @@ Future<void> _loadAllCaches() async {
   try {
     final prefs = await SharedPreferences.getInstance();
 
-  
+    final msgJson = prefs.getString(_kPrayerMessagesPrefs);
+    if (msgJson != null) {
+      final decoded = jsonDecode(msgJson) as Map<String, dynamic>;
+      decoded.forEach((k, v) {
+        _prayerMessagesCache[k] = {
+          'ur': (v['ur'] ?? '').toString(),
+          'en': (v['en'] ?? '').toString(),
+        };
+      });
+    }
 
-  
+    final namesJson = prefs.getString(_kPrayerNamesPrefs);
+    if (namesJson != null) {
+      final decoded = jsonDecode(namesJson) as Map<String, dynamic>;
+      decoded.forEach((k, v) {
+        _prayerNamesCache[k] = {
+          'ur': (v['ur'] ?? '').toString(),
+          'en': (v['en'] ?? '').toString(),
+        };
+      });
+    }
 
     final settingsJson = prefs.getString(_kAlarmSettingsPrefs);
     if (settingsJson != null) {
@@ -128,7 +163,11 @@ Future<void> _loadAllCaches() async {
       });
     }
 
-   
+    final menuJson = prefs.getString(_kMenuItemsPrefs);
+    if (menuJson != null) {
+      final decoded = jsonDecode(menuJson) as List;
+      _menuItemsCache = decoded.map((e) => Map<String, dynamic>.from(e)).toList();
+    }
 
     currentUserMobile = prefs.getString('mobile') ?? '';
   } catch (_) {}
@@ -248,8 +287,10 @@ Future<void> _scheduleStopAlarm(
 Future<List<Map<String, dynamic>>> fetchAndScheduleForMobile(String mobile,
     {bool force = false}) async {
   await Alarm.init();
+  fetchPrayerMessages();
+  fetchPrayerNames();
   fetchAlarmSettings();
-  fetchRemoteCaches();
+  fetchMenuItems();
 
   currentUserMobile = mobile;
 
@@ -612,8 +653,10 @@ Future<void> main() async {
 
   await _loadAllCaches();
 
-   fetchAlarmSettings();
-  fetchRemoteCaches();
+  fetchPrayerMessages();
+  fetchPrayerNames();
+  fetchAlarmSettings();
+  fetchMenuItems();
 
   try {
     final _prefs = await SharedPreferences.getInstance();
