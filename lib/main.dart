@@ -18,6 +18,7 @@ import 'package:android_intent_plus/flag.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import 'core/app_config.dart';
 const String scheduleUrlBase =
     'https://zahidiya-mysore.pages.dev/api/get-alarm-schedule';
 const String saveFcmTokenUrl =
