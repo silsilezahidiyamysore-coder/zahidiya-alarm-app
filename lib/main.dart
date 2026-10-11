@@ -115,16 +115,7 @@ Future<void> _loadAllCaches() async {
   try {
     final prefs = await SharedPreferences.getInstance();
 
-    final msgJson = prefs.getString(_kPrayerMessagesPrefs);
-    if (msgJson != null) {
-      final decoded = jsonDecode(msgJson) as Map<String, dynamic>;
-      decoded.forEach((k, v) {
-        _prayerMessagesCache[k] = {
-          'ur': (v['ur'] ?? '').toString(),
-          'en': (v['en'] ?? '').toString(),
-        };
-      });
-    }
+  
 
     final namesJson = prefs.getString(_kPrayerNamesPrefs);
     if (namesJson != null) {
