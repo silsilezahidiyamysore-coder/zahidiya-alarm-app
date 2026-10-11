@@ -248,10 +248,8 @@ Future<void> _scheduleStopAlarm(
 Future<List<Map<String, dynamic>>> fetchAndScheduleForMobile(String mobile,
     {bool force = false}) async {
   await Alarm.init();
-  fetchPrayerMessages();
-  fetchPrayerNames();
   fetchAlarmSettings();
-  fetchMenuItems();
+  fetchRemoteCaches();
 
   currentUserMobile = mobile;
 
