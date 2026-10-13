@@ -653,11 +653,10 @@ Future<void> main() async {
 
   await _loadAllCaches();
 
+  await fetchAlarmSettings();
   fetchPrayerMessages();
   fetchPrayerNames();
-  fetchAlarmSettings();
   fetchMenuItems();
-
   try {
     final _prefs = await SharedPreferences.getInstance();
     currentUserRole = _prefs.getString('role') ?? 'mureed';
