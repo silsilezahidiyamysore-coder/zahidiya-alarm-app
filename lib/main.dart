@@ -327,9 +327,9 @@ Future<List<Map<String, dynamic>>> fetchAndScheduleForMobile(String mobile,
       }
     } catch (_) {}
 
-    final int fetchedEndMinutesBefore =
-        _alarmSettingsCache['end_reminder_minutes_before'] ??
-        (data['end_reminder_minutes_before'] as num?)?.toInt() ?? 10;
+       final int fetchedEndMinutesBefore =
+        (data['end_reminder_minutes_before'] as num?)?.toInt() ??
+        _alarmSettingsCache['end_reminder_minutes_before'] ?? 10;
     final int startDur =
         _alarmSettingsCache['start_alarm_duration_seconds'] ??
         (data['start_alarm_duration_seconds'] as num?)?.toInt() ?? 12;
