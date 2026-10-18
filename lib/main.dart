@@ -288,8 +288,8 @@ Future<List<Map<String, dynamic>>> fetchAndScheduleForMobile(String mobile,
     {bool force = false}) async {
   await Alarm.init();
   
-  // FIX: Yahan await lagaya hai taaki nayi setting pehle mil jaye
-  await fetchAlarmSettings();
+  // FIX: Yahan se 'await' hataya hai taaki background mein load ho
+  fetchAlarmSettings(); 
   
   fetchPrayerMessages();
   fetchPrayerNames();
@@ -330,17 +330,19 @@ Future<List<Map<String, dynamic>>> fetchAndScheduleForMobile(String mobile,
       }
     } catch (_) {}
 
-    // FIX: Server ka data pehle check hoga, phir cache
+    // FIX: ISHA REMINDER FIX - Server ka data pehle check hoga, cache baad mein
     final int fetchedEndMinutesBefore =
         (data['end_reminder_minutes_before'] as num?)?.toInt() ??
-        _alarmSettingsCache['end_reminder_minutes_before'] ?? 10;
-        
+        _alarmSettingsCache['end_reminder_minutes_before'] ??
+        10;
     final int startDur =
+        (data['start_alarm_duration_seconds'] as num?)?.toInt() ??
         _alarmSettingsCache['start_alarm_duration_seconds'] ??
-        (data['start_alarm_duration_seconds'] as num?)?.toInt() ?? 12;
+        12;
     final int endDur =
+        (data['end_reminder_beep_seconds'] as num?)?.toInt() ??
         _alarmSettingsCache['end_reminder_beep_seconds'] ??
-        (data['end_reminder_beep_seconds'] as num?)?.toInt() ?? 12;
+        12;
 
     await AppConfig.saveEndMinutes(fetchedEndMinutesBefore);
     await _scheduleLocalAlarms(
@@ -435,8 +437,7 @@ Future<void> _scheduleLocalAlarms(
       DateTime at = DateTime.parse(raw['dateTime'].toString()).toLocal();
       int duration = startDuration;
       String category = 'namaz';
-      
-      if (type == 'end_reminder') {
+           if (type == 'end_reminder') {
         at = at.subtract(Duration(minutes: endMinutesBefore));
         duration = endDuration;
         if (endMinutesBefore > 0 && !title.contains('('))
@@ -692,12 +693,12 @@ Future<void> main() async {
 
   await _loadAllCaches();
 
-  // FIX: Yahan se `await` hata diya hai taaki app logo par atke nahi
-  fetchAlarmSettings();
+  // FIX: Yahan se 'await' hataya hai taaki app splash par na atke!
+  fetchAlarmSettings(); 
+  
   fetchPrayerMessages();
   fetchPrayerNames();
   fetchMenuItems();
-  
   try {
     final _prefs = await SharedPreferences.getInstance();
     currentUserRole = _prefs.getString('role') ?? 'mureed';
