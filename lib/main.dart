@@ -288,8 +288,8 @@ Future<List<Map<String, dynamic>>> fetchAndScheduleForMobile(String mobile,
     {bool force = false}) async {
   await Alarm.init();
   
-  // FIX: Yahan se 'await' hataya hai taaki background mein load ho
-  fetchAlarmSettings(); 
+  // Yahan se await hataya gaya hai (Splash screen fix)
+  fetchAlarmSettings();
   
   fetchPrayerMessages();
   fetchPrayerNames();
@@ -330,7 +330,7 @@ Future<List<Map<String, dynamic>>> fetchAndScheduleForMobile(String mobile,
       }
     } catch (_) {}
 
-    // FIX: ISHA REMINDER FIX - Server ka data pehle check hoga, cache baad mein
+    // Isha reminder fix: Server data pehle check hoga, cache baad mein
     final int fetchedEndMinutesBefore =
         (data['end_reminder_minutes_before'] as num?)?.toInt() ??
         _alarmSettingsCache['end_reminder_minutes_before'] ??
@@ -693,8 +693,8 @@ Future<void> main() async {
 
   await _loadAllCaches();
 
-  // FIX: Yahan se 'await' hataya hai taaki app splash par na atke!
-  fetchAlarmSettings(); 
+  // Yahan se await hataya gaya hai (Splash screen fix)
+  fetchAlarmSettings();
   
   fetchPrayerMessages();
   fetchPrayerNames();
