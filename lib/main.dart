@@ -287,7 +287,10 @@ Future<void> _scheduleStopAlarm(
 Future<List<Map<String, dynamic>>> fetchAndScheduleForMobile(String mobile,
     {bool force = false}) async {
   await Alarm.init();
-    await fetchAlarmSettings();
+  
+  // FIX: Yahan await lagaya hai taaki nayi setting pehle mil jaye
+  await fetchAlarmSettings();
+  
   fetchPrayerMessages();
   fetchPrayerNames();
   fetchMenuItems();
@@ -327,9 +330,11 @@ Future<List<Map<String, dynamic>>> fetchAndScheduleForMobile(String mobile,
       }
     } catch (_) {}
 
-       final int fetchedEndMinutesBefore =
+    // FIX: Server ka data pehle check hoga, phir cache
+    final int fetchedEndMinutesBefore =
         (data['end_reminder_minutes_before'] as num?)?.toInt() ??
         _alarmSettingsCache['end_reminder_minutes_before'] ?? 10;
+        
     final int startDur =
         _alarmSettingsCache['start_alarm_duration_seconds'] ??
         (data['start_alarm_duration_seconds'] as num?)?.toInt() ?? 12;
@@ -430,7 +435,8 @@ Future<void> _scheduleLocalAlarms(
       DateTime at = DateTime.parse(raw['dateTime'].toString()).toLocal();
       int duration = startDuration;
       String category = 'namaz';
-           if (type == 'end_reminder') {
+      
+      if (type == 'end_reminder') {
         at = at.subtract(Duration(minutes: endMinutesBefore));
         duration = endDuration;
         if (endMinutesBefore > 0 && !title.contains('('))
@@ -686,10 +692,12 @@ Future<void> main() async {
 
   await _loadAllCaches();
 
-  await fetchAlarmSettings();
+  // FIX: Yahan se `await` hata diya hai taaki app logo par atke nahi
+  fetchAlarmSettings();
   fetchPrayerMessages();
   fetchPrayerNames();
   fetchMenuItems();
+  
   try {
     final _prefs = await SharedPreferences.getInstance();
     currentUserRole = _prefs.getString('role') ?? 'mureed';
