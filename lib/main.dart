@@ -430,14 +430,25 @@ Future<void> _scheduleLocalAlarms(
       DateTime at = DateTime.parse(raw['dateTime'].toString()).toLocal();
       int duration = startDuration;
       String category = 'namaz';
-           if (type == 'end_reminder') {
-        // FIX: at = at.subtract(Duration(minutes: endMinutesBefore)); // Removed double subtraction
+
+      if (type == 'end_reminder') {
+        // ⛔ Isha ka end reminder skip (user request)
+        final _em = _endTitleRe.firstMatch(title);
+        final String _prayerName = _em?.group(1) ?? '';
+        if (_prayerName == 'Isha' ||
+            title.contains('Isha') ||
+            title.contains('عشاء')) {
+          continue; // Isha end reminder band
+        }
+
+        at = at.subtract(Duration(minutes: endMinutesBefore));
         duration = endDuration;
         if (endMinutesBefore > 0 && !title.contains('('))
           title = '$title ($endMinutesBefore min)';
 
         // Repeat beep based on end_reminder_repeat_count
-        final int repeatCount = _alarmSettingsCache['end_reminder_repeat_count'] ?? 1;
+        final int repeatCount =
+            _alarmSettingsCache['end_reminder_repeat_count'] ?? 1;
         final int beepGap = endDuration + 1;
         for (int rep = 0; rep < repeatCount; rep++) {
           final DateTime repAt = at.add(Duration(seconds: beepGap * rep));
@@ -445,8 +456,13 @@ Future<void> _scheduleLocalAlarms(
           if (repAt.isAfter(now.add(const Duration(hours: 50)))) continue;
           final int repId = idFromString('local_${type}_${raw['id']}_rep$rep');
           newIds.add(repId);
-          newRecords.add({'id': repId, 'title': _normTitle(title), 'at': repAt.millisecondsSinceEpoch});
-          await _scheduleOverlay(repId, repAt, translateAlarmTitle(title), duration);
+          newRecords.add({
+            'id': repId,
+            'title': _normTitle(title),
+            'at': repAt.millisecondsSinceEpoch
+          });
+          await _scheduleOverlay(
+              repId, repAt, translateAlarmTitle(title), duration);
           final repTone = await _getCachedTonePathOnly(category);
           await Alarm.set(
             alarmSettings: AlarmSettings(
@@ -495,8 +511,8 @@ Future<void> _scheduleLocalAlarms(
       if (!force) {
         final existing = await Alarm.getAlarm(id);
         if (existing != null &&
-            existing.dateTime.difference(at).abs() < const Duration(seconds: 2))
-          continue;
+            existing.dateTime.difference(at).abs() <
+                const Duration(seconds: 2)) continue;
       }
       final localTonePath = await _getCachedTonePathOnly(category);
       await Alarm.set(
@@ -525,7 +541,8 @@ Future<void> _scheduleLocalAlarms(
     if (oldJson != null) {
       for (final r in (jsonDecode(oldJson) as List)) {
         final int oid = r['id'] as int;
-        final DateTime oat = DateTime.fromMillisecondsSinceEpoch(r['at'] as int);
+        final DateTime oat =
+            DateTime.fromMillisecondsSinceEpoch(r['at'] as int);
         if (!newIds.contains(oid) && oat.isAfter(now)) {
           await Alarm.stop(oid);
           await _cancelOverlay(oid);
