@@ -13,6 +13,7 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Zahidiya Alarm',
+      debugShowCheckedModeBanner: false,
       theme: ThemeData(primarySwatch: Colors.green),
       home: const AlarmScreen(),
     );
@@ -27,11 +28,11 @@ class AlarmScreen extends StatefulWidget {
 }
 
 class _AlarmScreenState extends State<AlarmScreen> {
-  String currentLanguage = 'english'; // Default language
-  Map<String, dynamic> appConfig = {}; // Config store karne ke liye
+  String currentLanguage = 'english';
+  Map<String, dynamic> appConfig = {};
   bool isLoading = true;
 
-  // Website se data uthane ka function
+  // Data fetch karne ka function
   Future<void> fetchConfig() async {
     try {
       final response = await http.get(
@@ -44,10 +45,9 @@ class _AlarmScreenState extends State<AlarmScreen> {
           isLoading = false;
         });
       } else {
-        setState(() => isLoading = false); // Error aaye toh load band karo
+        setState(() => isLoading = false);
       }
     } catch (e) {
-      // Agar internet nahi hai, toh app crash nahi hogi, bas error dikhayegi
       setState(() => isLoading = false);
       print("Error fetching config: $e");
     }
@@ -56,18 +56,15 @@ class _AlarmScreenState extends State<AlarmScreen> {
   @override
   void initState() {
     super.initState();
-    fetchConfig(); // App open hote hi data laao
+    fetchConfig();
   }
 
   @override
   Widget build(BuildContext context) {
     if (isLoading) {
-      return const Scaffold(
-        body: Center(child: CircularProgressIndicator()), // Loading spinner
-      );
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
-    // Agar config load nahi hua toh default message
     if (appConfig.isEmpty) {
       return Scaffold(
         appBar: AppBar(title: const Text("Error")),
@@ -83,15 +80,13 @@ class _AlarmScreenState extends State<AlarmScreen> {
       );
     }
 
-    // Text nikalne ka logic (Language ke hisaab se)
-    String title = appConfig['texts'][currentLanguage]['isha_reminder_title'] ?? 'No Title';
-    String message = appConfig['texts'][currentLanguage]['isha_reminder_message'] ?? 'No Message';
+    String title = appConfig['texts']?[currentLanguage]?['isha_reminder_title'] ?? 'No Title';
+    String message = appConfig['texts']?[currentLanguage]?['isha_reminder_message'] ?? 'No Message';
 
     return Scaffold(
       appBar: AppBar(
         title: const Text("Zahidiya Alarm"),
         actions: [
-          // Language Toggle Buttons
           TextButton(
             onPressed: () => setState(() => currentLanguage = 'english'),
             child: const Text("EN", style: TextStyle(color: Colors.white)),
@@ -108,28 +103,22 @@ class _AlarmScreenState extends State<AlarmScreen> {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              // Title
               Text(
                 title,
                 textAlign: TextAlign.center,
                 style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-                // Urdu ke liye Nastaliq font (agar phone me installed hai)
                 textDirection: currentLanguage == 'urdu' ? TextDirection.rtl : TextDirection.ltr,
               ),
               const SizedBox(height: 20),
-              
-              // Message
               Text(
                 message,
                 textAlign: TextAlign.center,
                 style: const TextStyle(fontSize: 18),
                 textDirection: currentLanguage == 'urdu' ? TextDirection.rtl : TextDirection.ltr,
               ),
-              
               const SizedBox(height: 40),
-              // Admin Panel Status dikhane ke liye
               Text(
-                "Reminders Enabled: ${appConfig['remindersEnabled']}",
+                "Reminders: ${appConfig['remindersEnabled'] == true ? 'ON' : 'OFF'}",
                 style: const TextStyle(color: Colors.grey),
               ),
             ],
