@@ -455,16 +455,7 @@ Future<void> _scheduleLocalAlarms(
       String category = 'namaz';
 
       if (type == 'end_reminder') {
-        // Asli khatam hone ka waqt: realEndDateTime ho toh wahi, warna dateTime.
-        // Phir endMinutesBefore minute pehle. (Server ne pehle hi kam kar diya
-        // ho toh bhi realEndDateTime se sahi waqt milta hai.)
-        DateTime endTime = at;
-        if (raw['realEndDateTime'] != null) {
-          try {
-            endTime = DateTime.parse(raw['realEndDateTime'].toString()).toLocal();
-          } catch (_) {}
-        }
-        at = endTime.subtract(Duration(minutes: endMinutesBefore));
+        at = at.subtract(Duration(minutes: endMinutesBefore));
         duration = endDuration;
         repeatCount = endRepeat;
         if (endMinutesBefore > 0 && !title.contains('(')) {
@@ -679,51 +670,23 @@ void callbackDispatcher() {
   });
 }
 
-// ============================================================
-// FIXED SPLASH: runApp() jaldi, network kaam baad mein
-// ============================================================
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  try {
-    await Firebase.initializeApp();
-    fcm.FirebaseMessaging.onBackgroundMessage(
-        firebaseMessagingBackgroundHandler);
-  } catch (_) {}
+  await Firebase.initializeApp();
+  fcm.FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
 
-  // Sirf local/fast cheezein runApp se pehle
-  try {
-    await AppLang.load();
-    await AppUser.load();
-    await AppConfig.load();
-    await _loadAllCaches();
-    final prefs = await SharedPreferences.getInstance();
-    currentUserRole = prefs.getString('role') ?? 'mureed';
-  } catch (_) {}
-  try {
-    await Alarm.init();
-  } catch (_) {}
-  try {
-    await Workmanager().initialize(callbackDispatcher);
-  } catch (_) {}
+  fcm.FirebaseMessaging.instance.onTokenRefresh.listen((newToken) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final mobile = prefs.getString('mobile');
+      if (mobile != null && mobile.isNotEmpty) {
+        await sendTokenToBackend(mobile, newToken);
+      }
+    } catch (_) {}
+  });
 
-  runApp(const ZahidiyaAlarmApp());
-
-  // Baaki sab app dikhne ke baad (splash nahi atkega)
-  _postStartInit();
-}
-
-Future<void> _postStartInit() async {
-  try {
-    fcm.FirebaseMessaging.instance.onTokenRefresh.listen((newToken) async {
-      try {
-        final prefs = await SharedPreferences.getInstance();
-        final mobile = prefs.getString('mobile');
-        if (mobile != null && mobile.isNotEmpty) {
-          await sendTokenToBackend(mobile, newToken);
-        }
-      } catch (_) {}
-    });
-  } catch (_) {}
+  await Alarm.init();
+  await Workmanager().initialize(callbackDispatcher);
   try {
     await Workmanager().registerPeriodicTask(
       'zahidiya_safety_resync',
@@ -732,11 +695,27 @@ Future<void> _postStartInit() async {
       existingWorkPolicy: ExistingPeriodicWorkPolicy.keep,
       constraints: Constraints(networkType: NetworkType.connected),
     );
-  } catch (_) {}
-  fetchAlarmSettings();
+  } catch (e) {}
+
+  await AppLang.load();
+  await AppUser.load();
+  await AppConfig.load();
+
+  await _loadAllCaches();
+
+  await fetchAlarmSettings();
   fetchPrayerMessages();
   fetchPrayerNames();
   fetchMenuItems();
+  try {
+    final _prefs = await SharedPreferences.getInstance();
+    currentUserRole = _prefs.getString('role') ?? 'mureed';
+  } catch (_) {}
+
+  try {
+    await GoogleFonts.pendingFonts([GoogleFonts.notoNastaliqUrdu()]);
+  } catch (e) {}
+  runApp(const ZahidiyaAlarmApp());
 }
 
 final navigatorKey = GlobalKey<NavigatorState>();
@@ -1649,20 +1628,18 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   Future<void> _setupFCM() async {
-    try {
-      final messaging = fcm.FirebaseMessaging.instance;
-      await messaging.requestPermission(alert: true, badge: true, sound: true);
-      final token = await messaging.getToken();
-      _fcmToken = token;
-      if (token != null) {
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.setString('fcm_token', token);
-        final mobile = prefs.getString('mobile');
-        if (mobile != null && mobile.isNotEmpty) {
-          await sendTokenToBackend(mobile, token);
-        }
+    final messaging = fcm.FirebaseMessaging.instance;
+    await messaging.requestPermission(alert: true, badge: true, sound: true);
+    final token = await messaging.getToken();
+    _fcmToken = token;
+    if (token != null) {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('fcm_token', token);
+      final mobile = prefs.getString('mobile');
+      if (mobile != null && mobile.isNotEmpty) {
+        await sendTokenToBackend(mobile, token);
       }
-    } catch (_) {}
+    }
     fcm.FirebaseMessaging.onMessage.listen((fcm.RemoteMessage message) {
       if (message.data['type'] == 'refresh_settings') {
         SharedPreferences.getInstance().then((prefs) {
@@ -1686,7 +1663,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     if (saved != null) {
       _mobileController.text = saved;
       currentUserMobile = saved;
-      if (mounted) setState(() => _showMobileField = false);
+      setState(() => _showMobileField = false);
       _fetchAndScheduleAlarms();
     }
   }
@@ -1725,8 +1702,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       currentUserRole = verifyData['role']?.toString() ?? 'mureed';
       currentUserName = verifyData['name']?.toString() ?? '';
       currentUserMobile = mobile;
-      final p = await SharedPreferences.getInstance();
-      await p.setString('role', currentUserRole);
+      final _p = await SharedPreferences.getInstance();
+      await _p.setString('role', currentUserRole);
       widget.onRoleChanged?.call();
 
       final String? fetchedName = verifyData['name']?.toString();
@@ -1743,18 +1720,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           await AppUser.save(cleanName);
         }
       }
-       } catch (e) {
-      final sp = await SharedPreferences.getInstance();
-      if (sp.getString('mobile') != mobile) {
-        if (mounted) {
-          setState(() {
-            _statusKind = 'error';
-            _statusErrorDetail = 'verify: $e';
-          });
-        }
-        return;
-      }
-      // Saved number hai: verify fail hua toh bhi alarms set karte raho
+    } catch (e) {
+      setState(() => _statusKind = 'verify_error');
+      return;
     }
 
     setState(() {
@@ -1770,7 +1738,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     try {
       final items = await fetchAndScheduleForMobile(mobile, force: true);
       _lastFetched = DateTime.now();
-      if (!mounted) return;
       setState(() {
         _loading = false;
         _scheduledItems = items;
@@ -1782,7 +1749,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         }
       });
     } catch (e) {
-      if (!mounted) return;
       setState(() {
         _loading = false;
         _statusKind = 'error';
