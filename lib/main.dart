@@ -1743,9 +1743,18 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           await AppUser.save(cleanName);
         }
       }
-    } catch (e) {
-      if (mounted) setState(() => _statusKind = 'verify_error');
-      return;
+       } catch (e) {
+      final sp = await SharedPreferences.getInstance();
+      if (sp.getString('mobile') != mobile) {
+        if (mounted) {
+          setState(() {
+            _statusKind = 'error';
+            _statusErrorDetail = 'verify: $e';
+          });
+        }
+        return;
+      }
+      // Saved number hai: verify fail hua toh bhi alarms set karte raho
     }
 
     setState(() {
