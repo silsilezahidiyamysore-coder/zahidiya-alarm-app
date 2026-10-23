@@ -702,20 +702,26 @@ Future<void> main() async {
   await AppConfig.load();
 
   await _loadAllCaches();
-
-  await fetchAlarmSettings();
-  fetchPrayerMessages();
-  fetchPrayerNames();
-  fetchMenuItems();
   try {
     final _prefs = await SharedPreferences.getInstance();
     currentUserRole = _prefs.getString('role') ?? 'mureed';
   } catch (_) {}
 
+  // SPLASH FIX: network wali cheezein ab app dikhne ke BAAD chalti hain
+  runApp(const ZahidiyaAlarmApp());
+  _afterStartNetworkTasks();
+}
+
+Future<void> _afterStartNetworkTasks() async {
+  try {
+    await fetchAlarmSettings();
+  } catch (_) {}
+  fetchPrayerMessages();
+  fetchPrayerNames();
+  fetchMenuItems();
   try {
     await GoogleFonts.pendingFonts([GoogleFonts.notoNastaliqUrdu()]);
-  } catch (e) {}
-  runApp(const ZahidiyaAlarmApp());
+  } catch (_) {}
 }
 
 final navigatorKey = GlobalKey<NavigatorState>();
@@ -1691,7 +1697,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     final verifyUri = Uri.parse('$websiteUrl/api/verify-mobile?mobile=$mobile');
     try {
       final verifyRes =
-          await http.get(verifyUri).timeout(const Duration(seconds: 15));
+          await http.get(verifyUri).timeout(const Duration(seconds: 30));
       final verifyData = jsonDecode(verifyRes.body);
       if (verifyData['registered'] != true) {
         setState(() => _statusKind = 'not_registered');
