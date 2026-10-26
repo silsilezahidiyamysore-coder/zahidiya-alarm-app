@@ -455,10 +455,20 @@ Future<void> _scheduleLocalAlarms(
       String category = 'namaz';
 
       if (type == 'end_reminder') {
-        at = at.subtract(Duration(minutes: endMinutesBefore));
+        // Asli khatam hone ka waqt (realEndDateTime ho toh wahi), phir N min pehle
+        DateTime endTime = at;
+        if (raw['realEndDateTime'] != null) {
+          try {
+            endTime =
+                DateTime.parse(raw['realEndDateTime'].toString()).toLocal();
+          } catch (_) {}
+        }
+        at = endTime.subtract(Duration(minutes: endMinutesBefore));
         duration = endDuration;
         repeatCount = endRepeat;
-        if (endMinutesBefore > 0 && !title.contains('(')) {
+        // Server ke title mein purana "(10 min)" ho toh hata ke sahi minutes lagao
+        title = _normTitle(title);
+        if (endMinutesBefore > 0) {
           title = '$title ($endMinutesBefore min)';
         }
       } else if (type == 'event') {
@@ -509,7 +519,7 @@ Future<void> _scheduleLocalAlarms(
             vibrate: true,
             warningNotificationOnKill: false,
             androidFullScreenIntent: true,
-            volumeSettings: VolumeSettings.fixed(volume: 1.0),
+            volumeSettings: VolumeSettings.fixed(),
             notificationSettings: NotificationSettings(
               title: 'Silsila-e-Zahidiya Alarm',
               body: shownTitle,
@@ -582,7 +592,7 @@ Future<void> triggerImmediateAlarm(String title,
       vibrate: true,
       warningNotificationOnKill: false,
       androidFullScreenIntent: true,
-      volumeSettings: VolumeSettings.fixed(volume: 1.0),
+      volumeSettings: VolumeSettings.fixed(),
       notificationSettings: NotificationSettings(
         title: 'Silsila-e-Zahidiya Alarm',
         body: translateAlarmTitle(title),
@@ -1465,6 +1475,8 @@ class AlarmRingingScreen extends StatelessWidget {
                       if (navigatorKey.currentState?.canPop() ?? false) {
                         navigatorKey.currentState?.pop();
                       }
+                      // Band karne ke baad poori app close
+                      SystemNavigator.pop();
                     },
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.white,
@@ -1607,7 +1619,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       if (alarmSet.alarms.isNotEmpty) {
         _openRingingScreen(alarmSet.alarms.first.notificationSettings.body);
       } else {
-        if (_ringingScreenOpen && nav.canPop()) nav.pop();
+        if (_ringingScreenOpen && nav.canPop()) {
+          nav.pop();
+          // Alarm khud khatam hone par bhi poori app close
+          Future.delayed(const Duration(milliseconds: 400), () {
+            SystemNavigator.pop();
+          });
+        }
       }
     });
   }
