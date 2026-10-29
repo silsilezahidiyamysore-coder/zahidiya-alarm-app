@@ -53,7 +53,7 @@ Future<void> fetchPrayerMessages() async {
     if (data['success'] != true) return;
     final Map<String, Map<String, String>> newCache = {};
     for (final m in (data['messages'] as List)) {
-      final String key = '${m['prayer']}_${m['msg_type']}';
+      final String key = '${m['prayer']}_${m['msg_type']}'.toLowerCase();
       newCache[key] = {
         'ur': (m['message_ur'] ?? '').toString(),
         'en': (m['message_en'] ?? '').toString(),
@@ -75,7 +75,7 @@ Future<void> fetchPrayerNames() async {
     if (data['success'] != true) return;
     final Map<String, Map<String, String>> newCache = {};
     for (final n in (data['names'] as List)) {
-      final String key = (n['prayer'] ?? '').toString();
+      final String key = (n['prayer'] ?? '').toString().toLowerCase();
       newCache[key] = {
         'ur': (n['name_ur'] ?? '').toString(),
         'en': (n['name_en'] ?? '').toString(),
@@ -133,7 +133,7 @@ Future<void> _loadAllCaches() async {
     if (msgJson != null) {
       final decoded = jsonDecode(msgJson) as Map<String, dynamic>;
       decoded.forEach((k, v) {
-        _prayerMessagesCache[k] = {
+        _prayerMessagesCache[k.toLowerCase()] = {
           'ur': (v['ur'] ?? '').toString(),
           'en': (v['en'] ?? '').toString(),
         };
@@ -144,7 +144,7 @@ Future<void> _loadAllCaches() async {
     if (namesJson != null) {
       final decoded = jsonDecode(namesJson) as Map<String, dynamic>;
       decoded.forEach((k, v) {
-        _prayerNamesCache[k] = {
+        _prayerNamesCache[k.toLowerCase()] = {
           'ur': (v['ur'] ?? '').toString(),
           'en': (v['en'] ?? '').toString(),
         };
@@ -293,9 +293,14 @@ Future<void> _scheduleStopAlarm(
 Future<List<Map<String, dynamic>>> fetchAndScheduleForMobile(String mobile,
     {bool force = false}) async {
   await Alarm.init();
+  // Background/FCM wale isolate mein saved admin data pehle load karo,
+  // taaki net slow ho tab bhi admin ka hi message/minute use ho
+  await AppLang.load();
+  await AppConfig.load();
+  await _loadAllCaches();
   await fetchAlarmSettings();
-  fetchPrayerMessages();
-  fetchPrayerNames();
+  await fetchPrayerMessages();
+  await fetchPrayerNames();
   fetchMenuItems();
 
   currentUserMobile = mobile;
@@ -335,10 +340,13 @@ Future<List<Map<String, dynamic>>> fetchAndScheduleForMobile(String mobile,
       }
     } catch (_) {}
 
-    final int fetchedEndMinutesBefore =
-        _alarmSettingsCache['end_reminder_minutes_before'] ??
-            (data['end_reminder_minutes_before'] as num?)?.toInt() ??
-            10;
+    final int? srvMinutes =
+        (data['end_reminder_minutes_before'] as num?)?.toInt();
+    final int? setMinutes = _alarmSettingsCache['end_reminder_minutes_before'];
+    final int fetchedEndMinutesBefore = setMinutes ?? srvMinutes ?? 10;
+    final _tn = DateTime.now();
+    lastSyncDebug =
+        'sync ${_tn.hour}:${_tn.minute.toString().padLeft(2, '0')} | end reminder: ${fetchedEndMinutesBefore}m (settings:$setMinutes, schedule:$srvMinutes) | msg: ${_prayerMessagesCache.containsKey('isha_end') ? 'ok' : 'none'}';
     final int startDur = _alarmSettingsCache['start_alarm_duration_seconds'] ??
         (data['start_alarm_duration_seconds'] as num?)?.toInt() ??
         12;
@@ -417,6 +425,7 @@ Future<void> _stopRingingOnly() async {
   }
 }
 
+String lastSyncDebug = '';
 const String _kLocalAlarmRecords = 'local_alarm_records_v1';
 
 String _normTitle(String t) => t
@@ -505,7 +514,8 @@ Future<void> _scheduleLocalAlarms(
           final existing = await Alarm.getAlarm(id);
           if (existing != null &&
               existing.dateTime.difference(repAt).abs() <
-                  const Duration(seconds: 2)) {
+                  const Duration(seconds: 2) &&
+              existing.notificationSettings.body == shownTitle) {
             continue;
           }
         }
@@ -914,7 +924,7 @@ const Map<String, String> _prayerNameUr = {
 };
 
 String prayerLabel(String name) {
-  final cached = _prayerNamesCache[name];
+  final cached = _prayerNamesCache[name.toLowerCase()];
   if (cached != null) {
     final val = AppLang.current == 'ur' ? cached['ur'] : cached['en'];
     if (val != null && val.trim().isNotEmpty) return val;
@@ -923,7 +933,7 @@ String prayerLabel(String name) {
 }
 
 String prayerStartMessage(String prayerName) {
-  final cached = _prayerMessagesCache['${prayerName}_start'];
+  final cached = _prayerMessagesCache['${prayerName}_start'.toLowerCase()];
   if (cached != null) {
     final msg = AppLang.current == 'ur' ? cached['ur'] : cached['en'];
     if (msg != null && msg.trim().isNotEmpty) return msg;
@@ -934,7 +944,7 @@ String prayerStartMessage(String prayerName) {
 }
 
 String prayerEndMessage(String prayerName, {int? minutesLeft}) {
-  final cached = _prayerMessagesCache['${prayerName}_end'];
+  final cached = _prayerMessagesCache['${prayerName}_end'.toLowerCase()];
   if (cached != null) {
     final msg = AppLang.current == 'ur' ? cached['ur'] : cached['en'];
     if (msg != null && msg.trim().isNotEmpty) {
@@ -1600,8 +1610,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       setState(() {});
       final hasPrayerLeft =
           _groupScheduledItems(_scheduledItems).any((g) => g['type'] == 'prayer');
-      if (!hasPrayerLeft &&
-          DateTime.now().difference(_lastFetched) > const Duration(minutes: 10)) {
+      if (DateTime.now().difference(_lastFetched) > const Duration(minutes: 2) ||
+          (!hasPrayerLeft &&
+              DateTime.now().difference(_lastFetched) >
+                  const Duration(minutes: 1))) {
         _silentRefresh();
       }
     });
@@ -1645,7 +1657,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       if (ringing.alarms.isNotEmpty) {
         _openRingingScreen(ringing.alarms.first.notificationSettings.body);
       }
-      if (DateTime.now().difference(_lastFetched) > const Duration(minutes: 10)) {
+      if (DateTime.now().difference(_lastFetched) > const Duration(seconds: 20)) {
         _silentRefresh();
       }
     }
@@ -2066,6 +2078,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               Text(_status,
                   textAlign: TextAlign.center,
                   style: appFont(const TextStyle(fontSize: 15))),
+              if (lastSyncDebug.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(top: 6),
+                  child: Text(lastSyncDebug,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(fontSize: 10, color: Colors.grey)),
+                ),
               const SizedBox(height: 16),
               ListView.builder(
                 shrinkWrap: true,
