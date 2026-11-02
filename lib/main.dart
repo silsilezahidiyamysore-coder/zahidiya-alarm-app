@@ -346,7 +346,7 @@ Future<List<Map<String, dynamic>>> fetchAndScheduleForMobile(String mobile,
     final int fetchedEndMinutesBefore = setMinutes ?? srvMinutes ?? 10;
     final _tn = DateTime.now();
     lastSyncDebug =
-        'sync ${_tn.hour}:${_tn.minute.toString().padLeft(2, '0')} | end reminder: ${fetchedEndMinutesBefore}m (settings:$setMinutes, schedule:$srvMinutes) | msg: ${_prayerMessagesCache.containsKey('isha_end') ? 'ok' : 'none'}';
+        'sync ${_tn.hour}:${_tn.minute.toString().padLeft(2, '0')} | end reminder: ${fetchedEndMinutesBefore}m (settings:$setMinutes, schedule:$srvMinutes) | msg: ${_prayerMessagesCache.containsKey('isha_end') ? 'ok' : 'none'}\nText: ${translateAlarmTitle('Isha ki namaz khatam hone wali hai ($fetchedEndMinutesBefore min)')}';
     final int startDur = _alarmSettingsCache['start_alarm_duration_seconds'] ??
         (data['start_alarm_duration_seconds'] as num?)?.toInt() ??
         12;
@@ -426,6 +426,7 @@ Future<void> _stopRingingOnly() async {
 }
 
 String lastSyncDebug = '';
+String scheduleDebug = '';
 const String _kLocalAlarmRecords = 'local_alarm_records_v1';
 
 String _normTitle(String t) => t
@@ -449,6 +450,7 @@ Future<void> _scheduleLocalAlarms(
   final newRecords = <Map<String, dynamic>>[];
   final newIds = <int>{};
 
+  final seenKeys = <String>{};
   final int startRepeat =
       (_alarmSettingsCache['start_alarm_repeat_count'] ?? 1).clamp(1, 10);
   final int endRepeat =
@@ -458,6 +460,22 @@ Future<void> _scheduleLocalAlarms(
     try {
       String title = raw['title'].toString();
       final String type = (raw['type'] ?? '').toString();
+      // Admin panel ke ON/OFF switch: 0 ho toh alarm set hi nahi hoga
+      if (type == 'end_reminder' &&
+          (_alarmSettingsCache['end_reminder_enabled'] ?? 1) == 0) {
+        continue;
+      }
+      const otherTypes = [
+        'end_reminder',
+        'event',
+        'custom_alarm',
+        'event_end',
+        'custom_alarm_end'
+      ];
+      if (!otherTypes.contains(type) &&
+          (_alarmSettingsCache['start_alarm_enabled'] ?? 1) == 0) {
+        continue;
+      }
       DateTime at = DateTime.parse(raw['dateTime'].toString()).toLocal();
       int duration = startDuration;
       int repeatCount = startRepeat;
@@ -502,12 +520,21 @@ Future<void> _scheduleLocalAlarms(
         if (!repAt.isAfter(now.add(const Duration(seconds: 20)))) continue;
         if (repAt.isAfter(now.add(const Duration(hours: 50)))) continue;
 
+        // Same waqt + same title ka duplicate (aaj aur kal ke schedule mein) skip
+        final String dupKey =
+            '${_normTitle(title)}|${repAt.millisecondsSinceEpoch ~/ 1000}';
+        if (!seenKeys.add(dupKey)) continue;
+
         final int id = rep == 0
             ? idFromString('local_${type}_${raw['id']}')
             : idFromString('local_${type}_${raw['id']}_rep$rep');
         newIds.add(id);
-        newRecords.add(
-            {'id': id, 'title': _normTitle(title), 'at': repAt.millisecondsSinceEpoch});
+        newRecords.add({
+          'id': id,
+          'title': _normTitle(title),
+          'at': repAt.millisecondsSinceEpoch,
+          'type': type
+        });
         await _scheduleOverlay(id, repAt, shownTitle, duration);
 
         if (!force) {
@@ -558,6 +585,31 @@ Future<void> _scheduleLocalAlarms(
       }
     }
   } catch (_) {}
+  // Purani builds ke bache hue alarms (purane text/minute wale) bhi hatao
+  try {
+    final all = await Alarm.getAlarms();
+    for (final a in all) {
+      if (!newIds.contains(a.id) &&
+          a.dateTime.isAfter(now.add(const Duration(seconds: 30)))) {
+        await Alarm.stop(a.id);
+        await _cancelOverlay(a.id);
+      }
+    }
+  } catch (_) {}
+  try {
+    final up = newRecords
+        .where((r) =>
+            DateTime.fromMillisecondsSinceEpoch(r['at'] as int).isAfter(now))
+        .toList()
+      ..sort((a, b) => (a['at'] as int).compareTo(b['at'] as int));
+    scheduleDebug = up.take(8).map((r) {
+      final d = DateTime.fromMillisecondsSinceEpoch(r['at'] as int);
+      final t = r['title'].toString();
+      final m = RegExp(r'(Fajr|Dhuhr|Asr|Maghrib|Isha)').firstMatch(t);
+      final nm = m?.group(1) ?? (t.length > 20 ? t.substring(0, 20) : t);
+      return '${d.day}/${d.month} ${d.hour}:${d.minute.toString().padLeft(2, '0')}:${d.second.toString().padLeft(2, '0')}  ${r['type'] ?? ''}  $nm';
+    }).join('\n');
+  } catch (_) {}
   await prefs.setString(_kLocalAlarmRecords, jsonEncode(newRecords));
 }
 
@@ -570,11 +622,14 @@ Future<bool> _localAlarmAlreadyHandled(String title) async {
     final now = DateTime.now();
     final String wanted = _normTitle(title);
     for (final r in (jsonDecode(json) as List)) {
-      if (r['title'] != wanted) continue;
       final at = DateTime.fromMillisecondsSinceEpoch(r['at'] as int);
       final diff = now.difference(at);
-      if (diff >= const Duration(seconds: -120) &&
+      if (r['title'] == wanted &&
+          diff >= const Duration(seconds: -120) &&
           diff <= const Duration(minutes: 5)) return true;
+      // Title alag ho tab bhi: isi waqt koi local alarm hai toh push se dobara na bajao
+      if (diff >= const Duration(seconds: -120) &&
+          diff <= const Duration(seconds: 120)) return true;
     }
   } catch (_) {}
   return false;
@@ -1716,6 +1771,17 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         await Permission.systemAlertWindow.request();
       }
     } catch (_) {}
+    // Android 14+: full-screen alarm ke liye alag permission screen
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (!(prefs.getBool('asked_full_screen_intent') ?? false)) {
+        await prefs.setBool('asked_full_screen_intent', true);
+        await const AndroidIntent(
+          action: 'android.settings.MANAGE_APP_USE_FULL_SCREEN_INTENT',
+          data: 'package:com.zahidiya.alarm',
+        ).launch();
+      }
+    } catch (_) {}
   }
 
   Future<void> _fetchAndScheduleAlarms() async {
@@ -2081,7 +2147,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               if (lastSyncDebug.isNotEmpty)
                 Padding(
                   padding: const EdgeInsets.only(top: 6),
-                  child: Text(lastSyncDebug,
+                  child: Text(
+                      scheduleDebug.isEmpty
+                          ? lastSyncDebug
+                          : '$lastSyncDebug\n$scheduleDebug',
                       textAlign: TextAlign.center,
                       style: const TextStyle(fontSize: 10, color: Colors.grey)),
                 ),
