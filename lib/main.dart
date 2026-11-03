@@ -1634,6 +1634,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   bool _loading = false;
   String? _fcmToken;
   bool _showMobileField = true;
+  bool _showDebug = false;
   static const _screenChannel = MethodChannel('zahidiya.alarm/screen');
   Timer? _highlightRefreshTimer;
   DateTime _lastFetched = DateTime.now();
@@ -2170,10 +2171,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 _buildMenuGrid(),
                 const SizedBox(height: 12),
               ],
-              Text(_status,
-                  textAlign: TextAlign.center,
-                  style: appFont(const TextStyle(fontSize: 15))),
-              if (lastSyncDebug.isNotEmpty)
+              GestureDetector(
+                onLongPress: () => setState(() => _showDebug = !_showDebug),
+                child: Text(_status,
+                    textAlign: TextAlign.center,
+                    style: appFont(const TextStyle(fontSize: 15))),
+              ),
+              if (_showDebug && lastSyncDebug.isNotEmpty)
                 Padding(
                   padding: const EdgeInsets.only(top: 6),
                   child: Text(
