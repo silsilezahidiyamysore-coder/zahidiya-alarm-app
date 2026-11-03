@@ -324,6 +324,26 @@ Future<List<Map<String, dynamic>>> fetchAndScheduleForMobile(String mobile,
   try {
     List<dynamic> tomorrowSchedule = [];
     List<dynamic> tomorrowExtra = [];
+    // Kal raat ka schedule bhi: Isha ka end reminder aadhi raat ke baad aata hai
+    List<dynamic> yesterdaySchedule = [];
+    List<dynamic> yesterdayExtra = [];
+    bool yesterdayOk = false;
+    try {
+      final y = DateTime.now().subtract(const Duration(days: 1));
+      final yStr =
+          '${y.year}-${y.month.toString().padLeft(2, '0')}-${y.day.toString().padLeft(2, '0')}';
+      final r3 = await http
+          .get(Uri.parse('$scheduleUrlBase?mobile=$mobile&date=$yStr'))
+          .timeout(const Duration(seconds: 25));
+      if (r3.statusCode == 200) {
+        final d3 = jsonDecode(r3.body);
+        if (d3['success'] == true) {
+          yesterdaySchedule = d3['schedule'] ?? [];
+          yesterdayExtra = d3['extra_alarms'] ?? [];
+          yesterdayOk = true;
+        }
+      }
+    } catch (_) {}
     try {
       final t = DateTime.now().add(const Duration(days: 1));
       final dStr =
@@ -360,8 +380,11 @@ Future<List<Map<String, dynamic>>> fetchAndScheduleForMobile(String mobile,
         ...schedule,
         ...((data['extra_alarms'] as List?) ?? []),
         ...tomorrowSchedule,
-        ...tomorrowExtra
+        ...tomorrowExtra,
+        ...yesterdaySchedule,
+        ...yesterdayExtra
       ],
+      cancelStale: yesterdayOk,
       startDuration: startDur,
       endDuration: endDur,
       endMinutesBefore: fetchedEndMinutesBefore,
@@ -443,6 +466,7 @@ Future<void> _scheduleLocalAlarms(
   required int endDuration,
   required int endMinutesBefore,
   bool force = false,
+  bool cancelStale = true,
 }) async {
   final prefs = await SharedPreferences.getInstance();
   await prefs.reload();
@@ -576,8 +600,13 @@ Future<void> _scheduleLocalAlarms(
         final int oid = r['id'] as int;
         final DateTime oat = DateTime.fromMillisecondsSinceEpoch(r['at'] as int);
         if (!newIds.contains(oid) && oat.isAfter(now)) {
-          await Alarm.stop(oid);
-          await _cancelOverlay(oid);
+          if (cancelStale) {
+            await Alarm.stop(oid);
+            await _cancelOverlay(oid);
+          } else {
+            // Schedule poora na aaya ho toh purane alarm cancel mat karo
+            newRecords.add(Map<String, dynamic>.from(r as Map));
+          }
         } else if (!newIds.contains(oid) &&
             now.difference(oat) < const Duration(minutes: 15)) {
           newRecords.add(Map<String, dynamic>.from(r as Map));
