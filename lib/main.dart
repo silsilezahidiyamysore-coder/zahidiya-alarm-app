@@ -292,7 +292,7 @@ Future<void> _scheduleStopAlarm(
 
 Future<List<Map<String, dynamic>>> fetchAndScheduleForMobile(String mobile,
     {bool force = false}) async {
-  await Alarm.init();
+  await _ensureAlarmInit();
   // Background/FCM wale isolate mein saved admin data pehle load karo,
   // taaki net slow ho tab bhi admin ka hi message/minute use ho
   await AppLang.load();
@@ -448,6 +448,61 @@ Future<void> _stopRingingOnly() async {
   }
 }
 
+// Tone chhoti ho (duration se kam) toh loop karo, taaki admin ke second poore bajein.
+// (Lambi tone ko loop ki zarurat nahi; band hona timer se hi hota hai.)
+Future<bool> _needsLoop(String? path, int seconds) async {
+  if (path == null) return false;
+  try {
+    final bytes = await File(path).length();
+    final estSeconds = bytes / 16000; // ~128 kbps mp3
+    return estSeconds < seconds + 1;
+  } catch (_) {
+    return false;
+  }
+}
+
+bool _alarmInitDone = false;
+// Alarm.init() baar-baar (khaas kar alarm bajte waqt) chalane se chalta hua alarm
+// beech mein ruk sakta hai, isliye har isolate mein sirf ek baar.
+Future<void> _ensureAlarmInit() async {
+  if (_alarmInitDone) return;
+  await Alarm.init();
+  _alarmInitDone = true;
+}
+
+DateTime _ringStartedAt = DateTime.fromMillisecondsSinceEpoch(0);
+
+// Alarm bajte hi app ke andar exact timer: admin ke second par band karo.
+// (Workmanager Doze mein late ho jata hai, isliye ye timer saath mein chalta hai.)
+final Map<int, Timer> _stopTimers = {};
+Future<void> _armStopTimer(int id) async {
+  if (_stopTimers.containsKey(id)) return;
+  try {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.reload();
+    final json = prefs.getString(_kLocalAlarmRecords);
+    if (json == null) return;
+    for (final r in (jsonDecode(json) as List)) {
+      if (r['id'] == id && r['dur'] != null) {
+        final at = DateTime.fromMillisecondsSinceEpoch(r['at'] as int);
+        var remaining = at
+            .add(Duration(seconds: (r['dur'] as num).toInt()))
+            .difference(DateTime.now());
+        if (remaining < const Duration(seconds: 2)) {
+          remaining = const Duration(seconds: 2);
+        }
+        _stopTimers[id] = Timer(remaining, () async {
+          _stopTimers.remove(id);
+          try {
+            await Alarm.stop(id);
+          } catch (_) {}
+        });
+        return;
+      }
+    }
+  } catch (_) {}
+}
+
 String lastSyncDebug = '';
 String scheduleDebug = '';
 const String _kLocalAlarmRecords = 'local_alarm_records_v1';
@@ -541,7 +596,27 @@ Future<void> _scheduleLocalAlarms(
 
       for (int rep = 0; rep < repeatCount; rep++) {
         final DateTime repAt = at.add(Duration(seconds: beepGap * rep));
-        if (!repAt.isAfter(now.add(const Duration(seconds: 20)))) continue;
+        if (!repAt.isAfter(now.add(const Duration(seconds: 20)))) {
+          // Bajne wala (20 sec ke andar) ya abhi baja hua alarm: cleanup ise cancel na kare
+          if (repAt.isAfter(now.subtract(const Duration(minutes: 2)))) {
+            final int keepId = rep == 0
+                ? idFromString('local_${type}_${raw['id']}')
+                : idFromString('local_${type}_${raw['id']}_rep$rep');
+            try {
+              if (await Alarm.getAlarm(keepId) != null) {
+                newIds.add(keepId);
+                newRecords.add({
+                  'id': keepId,
+                  'title': _normTitle(title),
+                  'at': repAt.millisecondsSinceEpoch,
+                  'type': type,
+                  'dur': duration
+                });
+              }
+            } catch (_) {}
+          }
+          continue;
+        }
         if (repAt.isAfter(now.add(const Duration(hours: 50)))) continue;
 
         // Same waqt + same title ka duplicate (aaj aur kal ke schedule mein) skip
@@ -557,7 +632,8 @@ Future<void> _scheduleLocalAlarms(
           'id': id,
           'title': _normTitle(title),
           'at': repAt.millisecondsSinceEpoch,
-          'type': type
+          'type': type,
+          'dur': duration
         });
         await _scheduleOverlay(id, repAt, shownTitle, duration);
 
@@ -576,7 +652,7 @@ Future<void> _scheduleLocalAlarms(
             id: id,
             dateTime: repAt,
             assetAudioPath: tonePath,
-            loopAudio: false,
+            loopAudio: await _needsLoop(tonePath, duration),
             vibrate: true,
             warningNotificationOnKill: false,
             androidFullScreenIntent: true,
@@ -669,10 +745,19 @@ Future<void> triggerImmediateAlarm(String title,
     String category = 'namaz',
     bool showOverlay = true}) async {
   if (category != 'live' && await _localAlarmAlreadyHandled(title)) return;
+  // Namaz ke push alarm ki duration bhi admin panel se (server ki nahi)
+  int effDuration = durationSeconds;
+  if (category == 'namaz') {
+    if (_alarmSettingsCache.isEmpty) await _loadAllCaches();
+    final int? adminSecs = _endTitleRe.hasMatch(title)
+        ? _alarmSettingsCache['end_reminder_beep_seconds']
+        : _alarmSettingsCache['start_alarm_duration_seconds'];
+    if (adminSecs != null && adminSecs > 0) effDuration = adminSecs;
+  }
   try {
     await WakelockPlus.enable();
   } catch (_) {}
-  await Alarm.init();
+  await _ensureAlarmInit();
   final DateTime ringAt = DateTime.now().add(const Duration(seconds: 2));
   final int alarmId =
       idFromString('live_${DateTime.now().millisecondsSinceEpoch}');
@@ -682,7 +767,7 @@ Future<void> triggerImmediateAlarm(String title,
       id: alarmId,
       dateTime: ringAt,
       assetAudioPath: localTonePath,
-      loopAudio: false,
+      loopAudio: await _needsLoop(localTonePath, effDuration),
       vibrate: true,
       warningNotificationOnKill: false,
       androidFullScreenIntent: true,
@@ -694,9 +779,9 @@ Future<void> triggerImmediateAlarm(String title,
       ),
     ),
   );
-  await _scheduleStopAlarm(alarmId, ringAt, durationSeconds);
+  await _scheduleStopAlarm(alarmId, ringAt, effDuration);
   if (showOverlay) {
-    await _showAlarmOverlay(translateAlarmTitle(title), durationSeconds);
+    await _showAlarmOverlay(translateAlarmTitle(title), effDuration);
   }
 }
 
@@ -750,7 +835,7 @@ void callbackDispatcher() {
   Workmanager().executeTask((task, inputData) async {
     if (task == 'stopAlarmTask') {
       try {
-        await Alarm.init();
+        await _ensureAlarmInit();
         final id = inputData?['alarmId'];
         if (id != null) await Alarm.stop(id as int);
         try {
@@ -789,7 +874,7 @@ Future<void> main() async {
     } catch (_) {}
   });
 
-  await Alarm.init();
+  await _ensureAlarmInit();
   await Workmanager().initialize(callbackDispatcher);
   try {
     await Workmanager().registerPeriodicTask(
@@ -1665,6 +1750,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     if (_ringingScreenOpen) return;
     final nav = navigatorKey.currentState;
     if (nav == null) return;
+    _ringStartedAt = DateTime.now();
     _ringingScreenOpen = true;
     nav
         .push(MaterialPageRoute(
@@ -1687,6 +1773,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final ringing = Alarm.ringing.value;
       if (ringing.alarms.isNotEmpty) {
+        for (final a in ringing.alarms) {
+          _armStopTimer(a.id);
+        }
         _openRingingScreen(ringing.alarms.first.notificationSettings.body);
       }
     });
@@ -1704,6 +1793,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     });
     _screenChannel.setMethodCallHandler((call) async {
       if (call.method == 'screenOff') {
+        // Alarm shuru hote hi (6 sec tak) screen-off signal ko andekha karo
+        if (DateTime.now().difference(_ringStartedAt) <
+            const Duration(seconds: 6)) {
+          return;
+        }
         await _stopRingingOnly();
         try {
           await WakelockPlus.disable();
@@ -1714,6 +1808,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       final nav = navigatorKey.currentState;
       if (nav == null) return;
       if (alarmSet.alarms.isNotEmpty) {
+        for (final a in alarmSet.alarms) {
+          _armStopTimer(a.id);
+        }
         _openRingingScreen(alarmSet.alarms.first.notificationSettings.body);
       } else {
         if (_ringingScreenOpen && nav.canPop()) {
@@ -1740,6 +1837,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     if (state == AppLifecycleState.resumed) {
       final ringing = Alarm.ringing.value;
       if (ringing.alarms.isNotEmpty) {
+        for (final a in ringing.alarms) {
+          _armStopTimer(a.id);
+        }
         _openRingingScreen(ringing.alarms.first.notificationSettings.body);
       }
       if (DateTime.now().difference(_lastFetched) > const Duration(seconds: 20)) {
