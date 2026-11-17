@@ -433,18 +433,35 @@ Future<String?> _getCachedTonePathOnly([String category = 'namaz']) async {
 }
 
 Future<void> _stopRingingOnly() async {
+  // NOTE: Alarm.stopAll() kabhi nahi chalate, warna aage ke sab (Fajr wagairah)
+  // alarm bhi cancel ho jate hain.
   try {
     final now = DateTime.now();
     final all = await Alarm.getAlarms();
     for (final a in all) {
-      if (!a.dateTime.isAfter(now) || await Alarm.isRinging(a.id)) {
-        await Alarm.stop(a.id);
-      }
+      try {
+        if (!a.dateTime.isAfter(now) || await Alarm.isRinging(a.id)) {
+          await Alarm.stop(a.id);
+        }
+      } catch (_) {}
     }
-  } catch (_) {
-    try {
-      await Alarm.stopAll();
-    } catch (_) {}
+  } catch (_) {}
+}
+
+Future<String> _pluginAlarmsDebug() async {
+  try {
+    final all = await Alarm.getAlarms();
+    final now = DateTime.now();
+    final up = all.where((a) => a.dateTime.isAfter(now)).toList()
+      ..sort((a, b) => a.dateTime.compareTo(b.dateTime));
+    return 'Alarm plugin mein ${up.length} alarm: ' +
+        up
+            .take(6)
+            .map((a) =>
+                '${a.dateTime.day}/${a.dateTime.month} ${a.dateTime.hour}:${a.dateTime.minute.toString().padLeft(2, '0')}')
+            .join('  ');
+  } catch (e) {
+    return 'plugin list error: $e';
   }
 }
 
@@ -1720,6 +1737,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   String? _fcmToken;
   bool _showMobileField = true;
   bool _showDebug = false;
+  String _pluginDebug = '';
   static const _screenChannel = MethodChannel('zahidiya.alarm/screen');
   Timer? _highlightRefreshTimer;
   DateTime _lastFetched = DateTime.now();
@@ -2272,7 +2290,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 const SizedBox(height: 12),
               ],
               GestureDetector(
-                onLongPress: () => setState(() => _showDebug = !_showDebug),
+                onLongPress: () async {
+                  final d = await _pluginAlarmsDebug();
+                  if (!mounted) return;
+                  setState(() {
+                    _showDebug = !_showDebug;
+                    _pluginDebug = d;
+                  });
+                },
                 child: Text(_status,
                     textAlign: TextAlign.center,
                     style: appFont(const TextStyle(fontSize: 15))),
@@ -2282,8 +2307,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                   padding: const EdgeInsets.only(top: 6),
                   child: Text(
                       scheduleDebug.isEmpty
-                          ? lastSyncDebug
-                          : '$lastSyncDebug\n$scheduleDebug',
+                          ? '$lastSyncDebug\n$_pluginDebug'
+                          : '$lastSyncDebug\n$scheduleDebug\n$_pluginDebug',
                       textAlign: TextAlign.center,
                       style: const TextStyle(fontSize: 10, color: Colors.grey)),
                 ),
