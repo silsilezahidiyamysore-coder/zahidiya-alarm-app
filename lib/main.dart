@@ -650,7 +650,8 @@ Future<void> _scheduleLocalAlarms(
           'title': _normTitle(title),
           'at': repAt.millisecondsSinceEpoch,
           'type': type,
-          'dur': duration
+          'dur': duration,
+          'rep': rep
         });
         await _scheduleOverlay(id, repAt, shownTitle, duration);
 
@@ -693,11 +694,17 @@ Future<void> _scheduleLocalAlarms(
         final int oid = r['id'] as int;
         final DateTime oat = DateTime.fromMillisecondsSinceEpoch(r['at'] as int);
         if (!newIds.contains(oid) && oat.isAfter(now)) {
-          if (cancelStale) {
+          // Namaz ka end reminder (khaas kar Isha, jo agle din ke Fajr par depend hai)
+          // server ki ek adhuri/fail request se gayab ho sakta hai: use cancel mat karo,
+          // jab tak admin ne end reminder band na kiya ho.
+          final bool keepPrayerEnd = (r['type'] ?? '').toString() == 'end_reminder' &&
+              ((r['rep'] ?? 0) == 0) &&
+              (_alarmSettingsCache['end_reminder_enabled'] ?? 1) != 0;
+          if (cancelStale && !keepPrayerEnd) {
             await Alarm.stop(oid);
             await _cancelOverlay(oid);
           } else {
-            // Schedule poora na aaya ho toh purane alarm cancel mat karo
+            newIds.add(oid);
             newRecords.add(Map<String, dynamic>.from(r as Map));
           }
         } else if (!newIds.contains(oid) &&
@@ -709,7 +716,7 @@ Future<void> _scheduleLocalAlarms(
   } catch (_) {}
   // Purani builds ke bache hue alarms (purane text/minute wale) bhi hatao
   try {
-    final all = await Alarm.getAlarms();
+    final all = cancelStale ? await Alarm.getAlarms() : <AlarmSettings>[];
     for (final a in all) {
       if (!newIds.contains(a.id) &&
           a.dateTime.isAfter(now.add(const Duration(seconds: 30)))) {
